@@ -5,6 +5,33 @@
   let showDetailModal = false;
   let newNote = '';
 
+  let draggedOppId = null;
+  let hoverStageId = null;
+
+  function handleDragStart(event, oppId) {
+    draggedOppId = oppId;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', oppId);
+  }
+
+  function handleDragOver(event, stageId) {
+    event.preventDefault();
+    hoverStageId = stageId;
+  }
+
+  function handleDragLeave() {
+    hoverStageId = null;
+  }
+
+  function handleDrop(event, stageId) {
+    event.preventDefault();
+    if (draggedOppId) {
+      moveOpportunity(draggedOppId, stageId);
+    }
+    draggedOppId = null;
+    hoverStageId = null;
+  }
+
   // Calculate dynamic forecast totals
   $: totalPipelineValue = $opportunities.reduce((acc, o) => acc + (Number(o.dealSize) || 0), 0);
   $: weightedForecast = $opportunities.reduce((acc, o) => {
@@ -111,7 +138,14 @@
   <!-- Kanban Board Layout -->
   <div class="kanban-board">
     {#each $pipelineStages as stage}
-      <div class="kanban-column" style="border-top: 3px solid {stage.color}">
+      <div 
+        class="kanban-column" 
+        style="border-top: 3px solid {stage.color}"
+        class:drag-over={hoverStageId === stage.id}
+        on:dragover={(e) => handleDragOver(e, stage.id)}
+        on:dragleave={handleDragLeave}
+        on:drop={(e) => handleDrop(e, stage.id)}
+      >
         <div class="column-header">
           <div class="column-title-row">
             <span class="color-dot" style="background-color: {stage.color}"></span>
@@ -124,7 +158,13 @@
 
         <div class="cards-list">
           {#each $opportunities.filter(o => o.stage === stage.id) as opp}
-            <div class="opp-card glass-card" on:click={() => openDetails(opp)}>
+            <div 
+              class="opp-card glass-card" 
+              class:dragging={draggedOppId === opp.id}
+              draggable="true"
+              on:dragstart={(e) => handleDragStart(e, opp.id)}
+              on:click={() => openDetails(opp)}
+            >
               <div class="card-top">
                 <span class="card-co-name">{opp.companyName}</span>
                 <span class="esg-tiny" class:aaa={opp.esgRating?.includes('AAA')}>{opp.esgRating?.split(' ')[0] || 'A'}</span>
@@ -410,6 +450,17 @@
     background: rgba(255, 255, 255, 0.02);
     border-color: var(--border-color);
     transition: var(--transition-smooth);
+  }
+
+  .opp-card.dragging {
+    opacity: 0.4;
+    border: 1px dashed var(--accent-blue);
+  }
+
+  .kanban-column.drag-over {
+    background: rgba(51, 153, 255, 0.08);
+    border-color: rgba(51, 153, 255, 0.3);
+    box-shadow: inset 0 0 10px rgba(51, 153, 255, 0.1);
   }
 
   .opp-card:hover {
