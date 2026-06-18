@@ -75,17 +75,35 @@ CREATE TABLE IF NOT EXISTS public.opportunities (
 -- 4. LOANS TABLE
 -- ==========================================
 CREATE TABLE IF NOT EXISTS public.loans (
-    id             text          PRIMARY KEY, -- e.g., 'loan-1'
-    opportunity_id text          REFERENCES public.opportunities(id) ON DELETE SET NULL,
-    company_name   text          NOT NULL,
-    loan_id        text          NOT NULL UNIQUE, -- e.g., 'LN-2026-0043'
-    facility       text          NOT NULL,
-    amount         numeric       NOT NULL,
-    esg_rating     text          NOT NULL,
-    status         text          NOT NULL DEFAULT 'Active', -- 'Disbursed', 'Active', 'Settled'
-    booked_at      timestamptz   NOT NULL DEFAULT now(),
-    interest_rate  text          NOT NULL, -- e.g., '5.25%'
-    term_months    integer       NOT NULL
+    id                  text          PRIMARY KEY, -- e.g., 'loan-1101'
+    opportunity_id      text          REFERENCES public.opportunities(id) ON DELETE SET NULL,
+    company_name        text          NOT NULL,
+    loan_id             text          NOT NULL UNIQUE, -- e.g., '1101'
+    facility            text          NOT NULL,
+    amount              numeric       NOT NULL,
+    esg_rating          text          NOT NULL,
+    status              text          NOT NULL DEFAULT 'Active',
+    booked_at           timestamptz   NOT NULL DEFAULT now(),
+    interest_rate       text          NOT NULL,
+    term_months         integer       NOT NULL,
+    remaining_balance   numeric,
+    next_payment_num    integer       NOT NULL DEFAULT 1,
+    origination_date    text,
+    first_payment_date  text,
+    fund                text,
+    creditor            text,
+    compounding_period  text,
+    payment_frequency   text,
+    payment_method      text,
+    sub_status          text,
+    accounting_id       text,
+    file_no             text,
+    max_credit          numeric,
+    unique_identifier1  text,
+    unique_identifier2  text,
+    other_info          text,
+    borrower            jsonb,
+    custom_fields       jsonb
 );
 
 -- ==========================================
@@ -178,9 +196,55 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Seed Loans
-INSERT INTO public.loans (id, opportunity_id, company_name, loan_id, facility, amount, esg_rating, status, booked_at, interest_rate, term_months)
+INSERT INTO public.loans (
+    id, opportunity_id, company_name, loan_id, facility, amount, esg_rating, status, booked_at, interest_rate, term_months,
+    remaining_balance, next_payment_num, origination_date, first_payment_date, fund, creditor, compounding_period,
+    payment_frequency, payment_method, sub_status, accounting_id, file_no, max_credit, unique_identifier1, unique_identifier2,
+    other_info, borrower, custom_fields
+)
 VALUES
-  ('loan-1', 'opp-3', 'Greenfield Wind Farm', 'LN-2026-0043', 'Renewable Energy Dev Loan', 8000000, 'AAA (Exceptional)', 'Disbursed', '2026-06-09T09:12:00Z', '5.25%', 60)
+  (
+    'loan-1101', 'opp-3', 'Laing Project Limited', '1101', 'Urban Housing Fund', 58734, 'AA (High Impact)', 'Active', '2021-09-09T09:12:00Z', '6.00%', 54,
+    49936.91, 32, '09/09/2021', '18/09/2021', 'ACCESS2', 'Big Issue Invest', 'Annually', 'Monthly', 'Normal (Principal + Interest)', 'AUTO',
+    'ACC-1101', 'F-2021-101', 100000, 'LN-1101-M', 'CO-982138', 'This is the Laing Project affordable housing development.',
+    '{"firstName": "Jane", "lastName": "Laing", "businessName": "Laing Project Limited", "address": "12 High Street", "city": "London", "stateProv": "Greater London", "postcode": "SW1A 1AA", "country": "United Kingdom", "phone": "+44 20 7946 0122", "mobile": "+44 7700 900077", "email": "jane@laingproject.co.uk", "socialSec": "QQ 12 34 56 A", "birthDate": "1978-04-12", "maritalStatus": "Married", "uniqueIdentifier1": "B-9921", "uniqueIdentifier2": "09812421", "ownerCreator": "Linda Wickstrom"}',
+    '{"investmentManager": "Linda Wickstrom", "grant": 6000, "rateType": "Fixed"}'
+  ),
+  (
+    'loan-1102', 'opp-1', 'SolarTech Solutions', '1102', 'Renewable Energy Dev Loan', 30000, 'AAA (Exceptional)', 'Active', '2021-09-09T10:14:00Z', '6.00%', 60,
+    22000, 12, '09/09/2021', '18/09/2021', 'ACCESS2', 'Big Issue Invest', 'Annually', 'Monthly', 'Normal (Principal + Interest)', 'AUTO',
+    'ACC-1102', 'F-2021-102', 50000, 'LN-1102-M', 'CO-110239', 'Solar array expansion on community center.',
+    '{"firstName": "Alice", "lastName": "Vane", "businessName": "SolarTech Solutions", "address": "1 Broad Street", "city": "Birmingham", "stateProv": "West Midlands", "postcode": "B1 1BB", "country": "United Kingdom", "phone": "+44 121 496 0199", "email": "alice@solartech.io", "socialSec": "AB 98 76 54 C", "maritalStatus": "Single", "uniqueIdentifier1": "B-4412", "uniqueIdentifier2": "11023912", "ownerCreator": "Linda Wickstrom"}',
+    '{"investmentManager": "Linda Wickstrom", "grant": 0, "rateType": "Fixed"}'
+  ),
+  (
+    'loan-1103', 'opp-2', 'NextGen Bio', '1103', 'Tech Innovation Venture', 65000, 'A (Moderate)', 'Active', '2021-09-23T11:00:00Z', '6.00%', 48,
+    41212.99, 22, '23/09/2021', '01/10/2021', 'ACCESS2', 'Big Issue Invest', 'Annually', 'Monthly', 'Normal (Principal + Interest)', 'AUTO',
+    'ACC-1103', 'F-2021-103', 100000, 'LN-1103-M', 'CO-223912', 'Bio-waste processing facility expansion.',
+    '{"firstName": "Clara", "lastName": "Chen", "businessName": "NextGen Bio", "address": "Science Park Rd", "city": "Cambridge", "stateProv": "Cambridgeshire", "postcode": "CB4 0EY", "country": "United Kingdom", "phone": "+44 1223 496011", "email": "clara@nextgenbio.co", "uniqueIdentifier1": "B-2891", "uniqueIdentifier2": "22391231", "ownerCreator": "Linda Wickstrom"}',
+    '{"investmentManager": "Linda Wickstrom", "grant": 0, "rateType": "Fixed"}'
+  ),
+  (
+    'loan-1104', NULL, 'Newton Community Trust', '1104', 'Urban Housing Fund', 42000, 'AA (High Impact)', 'Active', '2021-09-28T09:00:00Z', '6.00%', 72,
+    35000, 15, '28/09/2021', '05/10/2021', 'PFP', 'Big Issue Invest', 'Annually', 'Monthly', 'Normal (Principal + Interest)', 'AUTO',
+    'ACC-1104', 'F-2021-104', 50000, 'LN-1104-M', 'CO-771239', 'Community hall renovation loan.',
+    '{"firstName": "Isaac", "lastName": "Newton", "businessName": "Newton Community Trust", "address": "Gravity Lane", "city": "Woolsthorpe", "stateProv": "Lincolnshire", "postcode": "NG33 5PD", "country": "United Kingdom", "email": "isaac@newtoncommunity.org", "ownerCreator": "Linda Wickstrom"}',
+    '{"investmentManager": "Linda Wickstrom", "grant": 0, "rateType": "Fixed"}'
+  ),
+  (
+    'loan-1106', 'opp-4', 'Apex Housing Group', '1106', 'Urban Housing Fund', 50000, 'AA (High Impact)', 'Bad debt', '2021-09-30T15:30:00Z', '6.00%', 60,
+    50000, 1, '30/09/2021', '15/10/2021', 'ACCESS2', 'Big Issue Invest', 'Annually', 'Monthly', 'Normal (Principal + Interest)', 'AUTO',
+    'ACC-1106', 'F-2021-106', 50000, 'LN-1106-M', 'CO-998811', 'Defaulted housing project. In collections.',
+    '{"firstName": "Bob", "lastName": "Miller", "businessName": "Apex Housing Group", "address": "Construction Way", "city": "Leeds", "stateProv": "West Yorkshire", "postcode": "LS1 1BA", "country": "United Kingdom", "email": "bob@apexhousing.com", "ownerCreator": "Linda Wickstrom"}',
+    '{"investmentManager": "Linda Wickstrom", "grant": 0, "rateType": "Fixed"}'
+  ),
+  (
+    'loan-1107', NULL, 'Southend Cooperative', '1107', 'Urban Housing Fund', 63000, 'A (Moderate)', 'Closed', '2021-09-30T10:00:00Z', '6.00%', 60,
+    0, 61, '30/09/2021', '10/10/2021', 'ACCESS2', 'Big Issue Invest', 'Annually', 'Monthly', 'Normal (Principal + Interest)', 'AUTO',
+    'ACC-1107', 'F-2021-107', 75000, 'LN-1107-M', 'CO-112233', 'Fully repaid community store loan.',
+    '{"firstName": "George", "lastName": "Coop", "businessName": "Southend Cooperative", "address": "Retail Row", "city": "Southend-on-Sea", "stateProv": "Essex", "postcode": "SS1 1AA", "country": "United Kingdom", "email": "george@southendcoop.org.uk", "ownerCreator": "Linda Wickstrom"}',
+    '{"investmentManager": "Linda Wickstrom", "grant": 0, "rateType": "Fixed"}'
+  )
 ON CONFLICT (id) DO NOTHING;
 
 -- Seed Audit Logs
