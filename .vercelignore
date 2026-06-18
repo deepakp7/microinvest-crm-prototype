@@ -1,0 +1,35 @@
+# Ignore dependencies and build artifacts
+node_modules
+.vercel
+.build
+.vscode
+.DS_Store
+.idea
+
+# Git
+.git
+
+# Project-specific large folders/files
+forms/
+status/
+
+# Office files and archives
+*.xlsx
+*.xlsm
+*.zip
+*.tar
+*.tar.gz
+
+# Logs, env, lockfiles
+*.log
+.env
+package-lock.json
+
+# Mac/Github cruft
+*.DS_Store
+Thumbs.db
+
+# Optional: exclude local build outputs
+dist/
+build/
+public/

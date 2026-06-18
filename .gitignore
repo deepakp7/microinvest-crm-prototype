@@ -1,0 +1,8 @@
+node_modules/
+.svelte-kit/
+build/
+.vercel/
+.env*
+*.local
+feedback_store.json
+.DS_Store

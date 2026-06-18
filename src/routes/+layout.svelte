@@ -1,6 +1,7 @@
 <script>
   import { userRole, notifications } from '$lib/store.js';
   import { page } from '$app/stores';
+  import FeedbackBubble from '$lib/FeedbackBubble.svelte';
 
   let roles = ['Sales Rep', 'Relationship Manager', 'Compliance Officer', 'Operations', 'Management Team', 'Admin'];
 
@@ -95,6 +96,8 @@
       <slot />
     </div>
   </main>
+
+  <FeedbackBubble />
 </div>
 
 <style>

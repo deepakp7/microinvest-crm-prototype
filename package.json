@@ -3,10 +3,23 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview"
+  },
+  "dependencies": {
+    "@opentelemetry/sdk-node": "^0.34.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.34.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.34.0",
+    "@opentelemetry/resources": "^1.6.0",
+    "@opentelemetry/semantic-conventions": "^1.9.0"
+  },
+  "optionalDependencies": {
+    "jspdf": "^2.5.1"
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^3.0.0",
