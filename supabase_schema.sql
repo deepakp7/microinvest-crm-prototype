@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS public.feedback (
     user_agent    text,
     incorporated  boolean       NOT NULL DEFAULT false,
     comment       text,
+    deleted       boolean       NOT NULL DEFAULT false,
     ts            timestamptz   NOT NULL DEFAULT now(),
     created_at    timestamptz   NOT NULL DEFAULT now()
 );

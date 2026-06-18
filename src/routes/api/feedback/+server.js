@@ -49,7 +49,8 @@ export async function GET() {
           userAgent: row.user_agent,
           ts: row.ts,
           incorporated: row.incorporated || false,
-          comment: row.comment || ''
+          comment: row.comment || '',
+          deleted: row.deleted || false
         }));
         return new Response(JSON.stringify(mapped), { headers: { 'Content-Type': 'application/json' } });
       } else {
@@ -113,14 +114,15 @@ export async function POST({ request }) {
 export async function PATCH({ request }) {
   try {
     const payload = await request.json();
-    const { id, incorporated, comment } = payload;
+    const { id, incorporated, comment, deleted } = payload;
 
     // Update locally first
     const list = await readStore();
     const idx = list.findIndex(item => item.id === id || String(item.id) === String(id));
     if (idx !== -1) {
-      list[idx].incorporated = incorporated;
-      list[idx].comment = comment;
+      if (incorporated !== undefined) list[idx].incorporated = incorporated;
+      if (comment !== undefined) list[idx].comment = comment;
+      if (deleted !== undefined) list[idx].deleted = deleted;
       await writeStore(list);
     }
 
@@ -131,6 +133,12 @@ export async function PATCH({ request }) {
       try {
         const table = 'feedback';
         const url = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${table}?id=eq.${id}`;
+        
+        const updateFields = {};
+        if (incorporated !== undefined) updateFields.incorporated = incorporated;
+        if (comment !== undefined) updateFields.comment = comment;
+        if (deleted !== undefined) updateFields.deleted = deleted;
+
         await fetch(url, {
           method: 'PATCH',
           headers: {
@@ -139,10 +147,7 @@ export async function PATCH({ request }) {
             Authorization: `Bearer ${SUPABASE_KEY}`,
             Prefer: 'return=representation'
           },
-          body: JSON.stringify({
-            incorporated: incorporated,
-            comment: comment
-          })
+          body: JSON.stringify(updateFields)
         });
       } catch (e) {
         console.error('supabase patch failed', e);

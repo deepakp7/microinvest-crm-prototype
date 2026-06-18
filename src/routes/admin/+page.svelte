@@ -6,6 +6,10 @@
   let loading = true;
   let activeTab = 'feedback'; // 'feedback', 'audit', 'kyc', 'config'
   let savingId = null;
+  let showDeleted = false; // Filter state
+
+  // Filter feedback reactively
+  $: filteredFeedback = feedback.filter(fb => showDeleted || !fb.deleted);
 
   async function loadFeedback() {
     loading = true;
@@ -78,6 +82,35 @@
       }
     } catch (e) {
       console.error('Failed to save comment justification', e);
+    } finally {
+      fb.isSaving = false;
+      feedback = [...feedback];
+    }
+  }
+
+  async function toggleSoftDelete(fb) {
+    fb.isSaving = true;
+    fb.deleted = !fb.deleted; // Toggle locally immediately
+    feedback = [...feedback];
+    try {
+      const res = await fetch('/api/feedback', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: fb.id,
+          deleted: fb.deleted
+        })
+      });
+      if (res.ok) {
+        fb.saveSuccess = true;
+        setTimeout(() => {
+          fb.saveSuccess = false;
+          feedback = [...feedback];
+        }, 1500);
+      }
+    } catch (e) {
+      console.error('Failed to toggle soft delete', e);
+      fb.deleted = !fb.deleted; // Rollback on failure
     } finally {
       fb.isSaving = false;
       feedback = [...feedback];
@@ -186,6 +219,12 @@
         <div>
           <h2>Feedback & Incorporation Justifications</h2>
           <p class="section-sub">Track feedback tickets, toggle incorporation status, and store implementation logs.</p>
+          <div class="filter-section" style="margin-top:12px;">
+            <label class="filter-checkbox-wrapper">
+              <input type="checkbox" bind:checked={showDeleted} />
+              <span class="filter-checkbox-text">Show Soft-Deleted Feedback Items</span>
+            </label>
+          </div>
         </div>
         <div class="action-buttons">
           <button on:click={loadFeedback} class="btn-secondary" disabled={loading}>
@@ -201,20 +240,20 @@
           <div class="spinner"></div>
           <span>Loading feedback logs from Supabase...</span>
         </div>
-      {:else if feedback.length === 0}
+      {:else if filteredFeedback.length === 0}
         <div class="empty-state">
           <span class="empty-icon">📂</span>
-          <h3>No feedback items recorded yet</h3>
-          <p>Feedback submitted via the widget will appear here in real-time.</p>
+          <h3>No feedback items match your filter</h3>
+          <p>Try checking "Show Soft-Deleted Feedback Items" or check back later.</p>
         </div>
       {:else}
         <div class="feedback-list">
-          {#each feedback as fb (fb.id)}
-            <div class="feedback-item-card" class:incorporated={fb.incorporated}>
+          {#each filteredFeedback as fb (fb.id)}
+            <div class="feedback-item-card" class:incorporated={fb.incorporated} class:deleted={fb.deleted}>
               <!-- Checklist Checkbox Area -->
               <div class="checkbox-area">
                 <label class="custom-checkbox">
-                  <input type="checkbox" bind:checked={fb.incorporated} on:change={() => toggleIncorporated(fb)} />
+                  <input type="checkbox" bind:checked={fb.incorporated} on:change={() => toggleIncorporated(fb)} disabled={fb.deleted} />
                   <span class="checkmark"></span>
                 </label>
               </div>
@@ -229,6 +268,16 @@
                   {:else if fb.saveSuccess}
                     <span class="saved-indicator">✓ Saved to Database</span>
                   {/if}
+                  
+                  {#if fb.deleted}
+                    <span class="deleted-badge">DELETED</span>
+                  {/if}
+                  
+                  <div style="margin-left: auto;">
+                    <button class="btn-delete" on:click={() => toggleSoftDelete(fb)} aria-label={fb.deleted ? 'Restore feedback' : 'Delete feedback'}>
+                      {fb.deleted ? '🔄 Restore' : '🗑️ Delete'}
+                    </button>
+                  </div>
                 </div>
 
                 <div class="feedback-texts">
@@ -255,8 +304,9 @@
                       id="comment-{fb.id}"
                       bind:value={fb.comment} 
                       placeholder="Justify why this feedback is/isn't being incorporated, or explain the solution implemented..."
+                      disabled={fb.deleted}
                     />
-                    <button class="btn-save-comment" on:click={() => saveComment(fb)}>
+                    <button class="btn-save-comment" on:click={() => saveComment(fb)} disabled={fb.deleted}>
                       Save Justification
                     </button>
                   </div>
@@ -925,5 +975,82 @@
     font-size: 13px;
     color: var(--text-secondary);
     margin-top: 4px;
+  }
+
+  /* Soft Delete & Filter Styles */
+  .feedback-item-card.deleted {
+    opacity: 0.4;
+    border-color: rgba(255, 255, 255, 0.04);
+    background: rgba(0, 0, 0, 0.2);
+  }
+
+  .feedback-item-card.deleted .text-bubble p {
+    text-decoration: line-through;
+    color: var(--text-muted);
+  }
+
+  .feedback-item-card.deleted .justification-wrapper {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  .filter-checkbox-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .filter-checkbox-wrapper input {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent-blue);
+    cursor: pointer;
+  }
+
+  .filter-checkbox-text {
+    transition: var(--transition-smooth);
+  }
+
+  .filter-checkbox-wrapper:hover .filter-checkbox-text {
+    color: var(--text-primary);
+  }
+
+  .deleted-badge {
+    font-size: 9px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--text-muted);
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+  }
+
+  .btn-delete {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 6px;
+    transition: var(--transition-smooth);
+  }
+
+  .btn-delete:hover {
+    background: rgba(231, 76, 60, 0.15);
+    border-color: var(--accent-red);
+    color: #fff;
+    box-shadow: 0 0 8px rgba(231, 76, 60, 0.2);
+  }
+
+  .feedback-item-card.deleted .btn-delete:hover {
+    background: rgba(51, 153, 255, 0.15);
+    border-color: var(--accent-blue);
+    color: #fff;
+    box-shadow: 0 0 8px rgba(51, 153, 255, 0.2);
   }
 </style>
