@@ -41,6 +41,9 @@
       <a href="/loans" class="nav-item" class:active={activePath.startsWith('/loans')}>
         <span class="icon">💸</span> Loan Booking
       </a>
+      <a href="/admin" class="nav-item" class:active={activePath.startsWith('/admin')}>
+        <span class="icon">👑</span> Admin Panel
+      </a>
     </nav>
 
     <div class="footer-status">

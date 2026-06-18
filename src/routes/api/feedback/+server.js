@@ -47,7 +47,9 @@ export async function GET() {
           generic: row.generic,
           pageSpecific: row.page_specific,
           userAgent: row.user_agent,
-          ts: row.ts
+          ts: row.ts,
+          incorporated: row.incorporated || false,
+          comment: row.comment || ''
         }));
         return new Response(JSON.stringify(mapped), { headers: { 'Content-Type': 'application/json' } });
       } else {
@@ -104,6 +106,51 @@ export async function POST({ request }) {
     return new Response(JSON.stringify({ ok: true }), { status: 201, headers: { 'Content-Type': 'application/json' } });
   } catch (e) {
     console.error('feedback POST error', e);
+    return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
+export async function PATCH({ request }) {
+  try {
+    const payload = await request.json();
+    const { id, incorporated, comment } = payload;
+
+    // Update locally first
+    const list = await readStore();
+    const idx = list.findIndex(item => item.id === id || String(item.id) === String(id));
+    if (idx !== -1) {
+      list[idx].incorporated = incorporated;
+      list[idx].comment = comment;
+      await writeStore(list);
+    }
+
+    // If Supabase is configured, patch it there
+    const SUPABASE_URL = env.SUPABASE_URL;
+    const SUPABASE_KEY = env.SUPABASE_KEY;
+    if (SUPABASE_URL && SUPABASE_KEY) {
+      try {
+        const table = 'feedback';
+        const url = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${table}?id=eq.${id}`;
+        await fetch(url, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+            Prefer: 'return=representation'
+          },
+          body: JSON.stringify({
+            incorporated: incorporated,
+            comment: comment
+          })
+        });
+      } catch (e) {
+        console.error('supabase patch failed', e);
+      }
+    }
+    return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
+  } catch (e) {
+    console.error('feedback PATCH error', e);
     return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 }
