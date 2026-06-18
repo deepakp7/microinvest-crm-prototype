@@ -24,6 +24,40 @@ async function writeStore(list) {
 }
 
 export async function GET() {
+  const SUPABASE_URL = env.SUPABASE_URL;
+  const SUPABASE_KEY = env.SUPABASE_KEY;
+
+  if (SUPABASE_URL && SUPABASE_KEY) {
+    try {
+      const table = 'feedback';
+      const url = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${table}?select=*&order=ts.desc`;
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`
+        }
+      });
+      if (res.ok) {
+        const dbRows = await res.json();
+        // Remap snake_case keys back to camelCase for the frontend
+        const mapped = dbRows.map(row => ({
+          id: row.id,
+          path: row.path,
+          generic: row.generic,
+          pageSpecific: row.page_specific,
+          userAgent: row.user_agent,
+          ts: row.ts
+        }));
+        return new Response(JSON.stringify(mapped), { headers: { 'Content-Type': 'application/json' } });
+      } else {
+        console.error('Supabase GET failed with status:', res.status);
+      }
+    } catch (e) {
+      console.error('Failed to fetch from Supabase, falling back to local store', e);
+    }
+  }
+
   const list = await readStore();
   return new Response(JSON.stringify(list), { headers: { 'Content-Type': 'application/json' } });
 }
