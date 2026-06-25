@@ -136,12 +136,12 @@
     return (principal * monthlyRate * Math.pow(1 + monthlyRate, term)) / (Math.pow(1 + monthlyRate, term) - 1);
   }
 
-  // Generates amortization schedule precisely mimicking Slide 3
+  // Generates amortization schedule precisely mimicking Slide 3 with mid-way modifications
   function generateAmortization(loan) {
     if (!loan) return { schedule: [], accumulatedInterest: 0 };
     const amount = loan.amount;
     const rateStr = loan.interestRate || '6.00%';
-    const rate = parseFloat(rateStr) / 100;
+    let rate = parseFloat(rateStr) / 100;
     const term = loan.termMonths || 60;
 
     const origDate = parseDateStr(loan.originationDate || loan.bookedAt);
@@ -164,49 +164,90 @@
       comment: loan.loanId === '1101' ? '6k grant' : 'Origination'
     });
 
-    let paymentAmount = loan.paymentAmount || calculatePMT(amount, rateStr, term);
+    let defaultPmtAmount = loan.paymentAmount || calculatePMT(amount, rateStr, term);
     if (loan.loanId === '1101') {
-      paymentAmount = 559.00; // Slide 3 exact PMT
+      defaultPmtAmount = 559.00; // Slide 3 exact PMT
     }
 
     let prevDate = origDate;
 
     for (let i = 1; i <= term; i++) {
+      const lineNum = i + 1;
       const pmtDate = getNextPaymentDate(origDate, firstPmtDate, i, loan.loanId);
       const days = getDaysBetween(prevDate, pmtDate);
 
-      let interest = balance * rate * (days / 365);
+      let isHoliday = false;
+      let activeRate = rate;
+      let activePaymentAmount = defaultPmtAmount;
+      let holidayComment = '';
+
+      // Check modifications active for this lineNum
+      if (loan.modifications && loan.modifications.length > 0) {
+        // 1. Check for repayment holidays
+        const holidayMod = loan.modifications.find(m => 
+          m.type === 'holiday' && 
+          lineNum >= m.effectiveMonthNum && 
+          lineNum < m.effectiveMonthNum + m.duration
+        );
+        if (holidayMod) {
+          isHoliday = true;
+          holidayComment = `Repayment Holiday (${lineNum - holidayMod.effectiveMonthNum + 1}/${holidayMod.duration})`;
+        }
+
+        // 2. Check for rate changes
+        const rateMod = loan.modifications
+          .filter(m => m.type === 'rate_change' && lineNum >= m.effectiveMonthNum)
+          .sort((a, b) => b.effectiveMonthNum - a.effectiveMonthNum)[0];
+        if (rateMod) {
+          activeRate = parseFloat(rateMod.newValue) / 100;
+        }
+
+        // 3. Check for payment changes
+        const pmtMod = loan.modifications
+          .filter(m => m.type === 'payment_change' && lineNum >= m.effectiveMonthNum)
+          .sort((a, b) => b.effectiveMonthNum - a.effectiveMonthNum)[0];
+        if (pmtMod) {
+          activePaymentAmount = parseFloat(pmtMod.newValue);
+        }
+      }
+
+      let interest = balance * activeRate * (days / 365);
       interest = Math.round(interest * 100) / 100;
 
-      let principal = paymentAmount - interest;
+      let paymentAmount = isHoliday ? 0 : activePaymentAmount;
+      let principal = isHoliday ? 0 : (paymentAmount - interest);
       principal = Math.round(principal * 100) / 100;
 
       let endingBalance = balance - principal;
+      if (isHoliday) {
+        endingBalance = balance + interest;
+      }
       endingBalance = Math.round(endingBalance * 100) / 100;
 
-      if (endingBalance < 0) {
+      if (endingBalance < 0 && !isHoliday) {
         principal = balance;
         endingBalance = 0;
+        paymentAmount = principal + interest;
       }
 
       accumulatedInterest += interest;
 
       schedule.push({
-        num: i + 1,
+        num: lineNum,
         date: pmtDate,
-        status: (i + 1 < (loan.nextPaymentNum || 1)) ? 'Paid Pmt' : 'Due Pmt',
+        status: (lineNum < (loan.nextPaymentNum || 1)) ? 'Paid Pmt' : (isHoliday ? 'Repayment Holiday' : 'Due Pmt'),
         payment: paymentAmount,
-        rate: rate * 100,
+        rate: activeRate * 100,
         principalPaid: principal,
         interestPaid: interest,
         balance: Math.max(0, endingBalance),
-        comment: ''
+        comment: holidayComment || (rateStr !== (activeRate * 100).toFixed(2) + '%' ? `Rate: ${(activeRate * 100).toFixed(2)}%` : '')
       });
 
       balance = endingBalance;
       prevDate = pmtDate;
 
-      if (balance <= 0) break;
+      if (balance <= 0 && !isHoliday) break;
     }
 
     return { schedule, accumulatedInterest };
@@ -476,6 +517,69 @@
     };
     addAuditLog($userRole, `Excel Daily Sync completed. "Margill_YTD_Reconciliation_Report.xlsx" processed. 6 accounts updated.`);
   }
+
+  // Restructuring input states
+  let holidayStartMonth = 12;
+  let holidayDuration = 3;
+
+  let newRateValue = '7.50%';
+  let rateChangeMonth = 15;
+
+  let newTermValue = 72;
+  let termChangeMonth = 20;
+
+  let newPmtValue = 600.00;
+  let pmtChangeMonth = 15;
+
+  function addModification(type) {
+    if (!selectedLoan) return;
+
+    let mod = { type };
+
+    if (type === 'holiday') {
+      mod.effectiveMonthNum = holidayStartMonth;
+      mod.duration = holidayDuration;
+      addAuditLog($userRole, `Applied ${holidayDuration}-month Repayment Holiday starting at Month ${holidayStartMonth} for ${selectedLoan.companyName} (Loan ID: ${selectedLoan.loanId})`);
+    } else if (type === 'rate_change') {
+      mod.effectiveMonthNum = rateChangeMonth;
+      mod.newValue = newRateValue;
+      addAuditLog($userRole, `Modified interest rate mid-way to ${newRateValue} starting at Month ${rateChangeMonth} for ${selectedLoan.companyName} (Loan ID: ${selectedLoan.loanId})`);
+    } else if (type === 'term_extension') {
+      mod.effectiveMonthNum = termChangeMonth;
+      mod.newValue = newTermValue;
+      addAuditLog($userRole, `Restructured total term to ${newTermValue} months starting at Month ${termChangeMonth} for ${selectedLoan.companyName} (Loan ID: ${selectedLoan.loanId})`);
+    } else if (type === 'payment_change') {
+      mod.effectiveMonthNum = pmtChangeMonth;
+      mod.newValue = newPmtValue;
+      addAuditLog($userRole, `Adjusted custom monthly payment to £${newPmtValue} starting at Month ${pmtChangeMonth} for ${selectedLoan.companyName} (Loan ID: ${selectedLoan.loanId})`);
+    }
+
+    loans.update(list =>
+      list.map(l => {
+        if (l.loanId === selectedLoan.loanId) {
+          const mods = [...(l.modifications || []), mod];
+          return {
+            ...l,
+            modifications: mods
+          };
+        }
+        return l;
+      })
+    );
+
+    statusMsg = `🔧 Applied ${type.replace('_', ' ')} restructuring to schedule!`;
+    setTimeout(() => { statusMsg = ''; }, 3000);
+  }
+
+  function clearAllModifications() {
+    if (!selectedLoan) return;
+    loans.update(list =>
+      list.map(l => l.loanId === selectedLoan.loanId ? { ...l, modifications: [] } : l)
+    );
+    addAuditLog($userRole, `Reset all mid-way modifications for ${selectedLoan.companyName} (Loan ID: ${selectedLoan.loanId})`);
+    statusMsg = `🔄 Reset loan modifications!`;
+    setTimeout(() => { statusMsg = ''; }, 3000);
+  }
 </script>
 
 <div class="loans-page">
@@ -636,7 +740,7 @@
                 <button class="v-tab" class:active={inspectorTab === 'schedule'} on:click={() => inspectorTab = 'schedule'}>📊 Amortization Schedule</button>
                 <button class="v-tab" class:active={inspectorTab === 'data'} on:click={() => inspectorTab = 'data'}>⚙️ Loan Data Sheets</button>
                 <button class="v-tab" class:active={inspectorTab === 'borrower'} on:click={() => inspectorTab = 'borrower'}>👤 Borrower Info</button>
-                <button class="v-tab" class:disabled={true}>🏦 Creditor Details</button>
+                <button class="v-tab" class:active={inspectorTab === 'restructuring'} on:click={() => inspectorTab = 'restructuring'}>🔧 Restructure & Holidays</button>
                 <button class="v-tab" class:disabled={true}>📈 APR Analysis</button>
                 <button class="v-tab" class:disabled={true}>🔔 System Alerts</button>
               </div>
@@ -694,7 +798,8 @@
                           {#each generateAmortization(selectedLoan).schedule as row}
                             <tr class="schedule-row" 
                                 class:processed={row.num < (selectedLoan.nextPaymentNum || 1)} 
-                                class:current-pmt={row.num === (selectedLoan.nextPaymentNum || 1)}>
+                                class:current-pmt={row.num === (selectedLoan.nextPaymentNum || 1)}
+                                class:holiday-row={row.status === 'Repayment Holiday'}>
                               <td class="mono">{row.num}</td>
                               <td>
                                 <span class="tag-{row.status.toLowerCase().replace(' ', '-')}">
@@ -1052,6 +1157,127 @@
                         <button type="submit" class="btn-primary">💾 Save Borrower Info</button>
                       </div>
                     </form>
+                  </div>
+                {/if}
+
+                <!-- SUB-TAB: RESTRUCTURING & HOLIDAYS -->
+                {#if inspectorTab === 'restructuring'}
+                  <div class="restructuring-view fade-in">
+                    <div class="panel-header-actions" style="margin-bottom: 20px;">
+                      <div>
+                        <h4 style="font-size: 16px;">🔧 Mid-Way Loan Restructuring & Holidays</h4>
+                        <p class="description" style="font-size: 12px; margin-top: 4px; color: var(--text-secondary);">Dynamically configure repayment holidays, modify interest rates, alter term lengths, or set custom payments for this active loan.</p>
+                      </div>
+                      <button class="btn-secondary" style="border-color: var(--accent-red); color: var(--accent-red); padding: 6px 12px; font-size: 11px;" on:click={clearAllModifications}>
+                        🔄 Reset All Modifications
+                      </button>
+                    </div>
+
+                    <div class="form-grid-2col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 16px;">
+                      
+                      <!-- Section 1: Repayment Holiday -->
+                      <div class="form-card-section">
+                        <h5>🏖️ Repayment Holiday Deferral</h5>
+                        <p class="description" style="font-size: 11px; margin-bottom: 12px; color: var(--text-secondary);">Applies a 0-payment period. Unpaid interest is capitalized into the remaining balance.</p>
+                        
+                        <div class="input-group">
+                          <label for="holiday-start">Start Payment Month #</label>
+                          <input type="number" id="holiday-start" min="2" max="60" bind:value={holidayStartMonth} />
+                        </div>
+                        <div class="input-group">
+                          <label for="holiday-dur">Duration (Months)</label>
+                          <input type="number" id="holiday-dur" min="1" max="12" bind:value={holidayDuration} />
+                        </div>
+                        
+                        <button class="btn-primary" style="margin-top: 12px;" on:click={() => addModification('holiday')}>
+                          Apply Deferral Holiday
+                        </button>
+                      </div>
+
+                      <!-- Section 2: Rate Adjustment -->
+                      <div class="form-card-section">
+                        <h5>📈 Mid-Term Rate Change</h5>
+                        <p class="description" style="font-size: 11px; margin-bottom: 12px; color: var(--text-secondary);">Alters the nominal annual interest rate starting from a specific repayment month.</p>
+                        
+                        <div class="input-group">
+                          <label for="rate-start">Effective Payment Month #</label>
+                          <input type="number" id="rate-start" min="2" max="60" bind:value={rateChangeMonth} />
+                        </div>
+                        <div class="input-group">
+                          <label for="rate-val">New Interest Rate (%)</label>
+                          <input type="text" id="rate-val" bind:value={newRateValue} />
+                        </div>
+                        
+                        <button class="btn-primary" style="margin-top: 12px;" on:click={() => addModification('rate_change')}>
+                          Apply Rate Modification
+                        </button>
+                      </div>
+
+                      <!-- Section 3: Term Modification -->
+                      <div class="form-card-section">
+                        <h5>📅 Term Length Adjustment</h5>
+                        <p class="description" style="font-size: 11px; margin-bottom: 12px; color: var(--text-secondary);">Changes the total number of amortization payments (extends or reduces remaining months).</p>
+                        
+                        <div class="input-group">
+                          <label for="term-start">Effective Payment Month #</label>
+                          <input type="number" id="term-start" min="2" max="60" bind:value={termChangeMonth} />
+                        </div>
+                        <div class="input-group">
+                          <label for="term-val">New Total Term (Months)</label>
+                          <input type="number" id="term-val" min="10" max="120" bind:value={newTermValue} />
+                        </div>
+                        
+                        <button class="btn-primary" style="margin-top: 12px;" on:click={() => addModification('term_extension')}>
+                          Apply Term Adjustment
+                        </button>
+                      </div>
+
+                      <!-- Section 4: Custom Monthly Payment -->
+                      <div class="form-card-section">
+                        <h5>💸 Custom Monthly Payment</h5>
+                        <p class="description" style="font-size: 11px; margin-bottom: 12px; color: var(--text-secondary);">Overrides the calculated PMT value with a custom fixed payment amount starting from month X.</p>
+                        
+                        <div class="input-group">
+                          <label for="pmt-start">Effective Payment Month #</label>
+                          <input type="number" id="pmt-start" min="2" max="60" bind:value={pmtChangeMonth} />
+                        </div>
+                        <div class="input-group">
+                          <label for="pmt-val">New Monthly Payment Amount (£)</label>
+                          <input type="number" id="pmt-val" min="10" bind:value={newPmtValue} />
+                        </div>
+                        
+                        <button class="btn-primary" style="margin-top: 12px;" on:click={() => addModification('payment_change')}>
+                          Apply Payment Override
+                        </button>
+                      </div>
+
+                    </div>
+
+                    <!-- Modifications list summary -->
+                    {#if selectedLoan.modifications && selectedLoan.modifications.length > 0}
+                      <div class="custom-fields-table-wrapper" style="margin-top: 24px; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden;">
+                        <table class="custom-fields-table" style="width: 100%; border-collapse: collapse; font-size: 11px; text-align: left;">
+                          <thead>
+                            <tr style="background: rgba(255,255,255,0.02); color: var(--text-secondary);">
+                              <th style="padding: 10px 14px;">Applied Restructure Item</th>
+                              <th style="padding: 10px 14px;">Effective Month</th>
+                              <th style="padding: 10px 14px;">Duration</th>
+                              <th style="padding: 10px 14px;">Value / Setting</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {#each selectedLoan.modifications as mod}
+                              <tr style="border-top: 1px solid var(--border-color);">
+                                <td class="font-bold" style="text-transform: uppercase; padding: 10px 14px;">{mod.type.replace('_', ' ')}</td>
+                                <td style="padding: 10px 14px;">Month #{mod.effectiveMonthNum}</td>
+                                <td style="padding: 10px 14px;">{mod.duration ? mod.duration + ' months' : 'Permanent'}</td>
+                                <td class="mono" style="padding: 10px 14px; font-family: var(--font-code); color: var(--accent-blue);">{mod.newValue || 'N/A'}</td>
+                              </tr>
+                            {/each}
+                          </tbody>
+                        </table>
+                      </div>
+                    {/if}
                   </div>
                 {/if}
 
@@ -1825,6 +2051,22 @@
   .tag-due-pmt {
     color: var(--accent-blue);
     font-weight: 600;
+  }
+
+  .tag-repayment-holiday {
+    color: var(--accent-orange);
+    font-weight: 700;
+    text-transform: uppercase;
+    background: rgba(243, 156, 18, 0.1);
+    border: 1px solid rgba(243, 156, 18, 0.2);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 9px;
+    display: inline-block;
+  }
+
+  .schedule-row.holiday-row {
+    background: rgba(243, 156, 18, 0.04);
   }
 
   /* Form layouts (Slide 4, 5, 7) */

@@ -496,6 +496,27 @@ const defaultNotifications = [
   { id: 'not-3', type: 'Operations Task', client: 'NextGen Bio', message: 'Upload signed facility letter', urgent: false }
 ];
 
+// Default NCM Funds data
+const defaultNcmFunds = [
+  { fundCode: 'ACCESS2', name: 'Access 2 Growth Fund', totalFundValue: 10000000, adminFeeRate: '0.95%', custodianBank: 'Royal Bank of Scotland', lastValuationSync: new Date().toISOString() },
+  { fundCode: 'PFP', name: "People's Fund Portfolio", totalFundValue: 5000000, adminFeeRate: '1.20%', custodianBank: 'HSBC UK', lastValuationSync: new Date().toISOString() },
+  { fundCode: 'ESM', name: 'Enterprise Social Microfinance', totalFundValue: 4000000, adminFeeRate: '1.10%', custodianBank: 'Barclays Bank', lastValuationSync: new Date().toISOString() },
+  { fundCode: 'BIIGLA', name: 'Big Issue Growth Loan Admin', totalFundValue: 3000000, adminFeeRate: '0.85%', custodianBank: 'Lloyds Bank', lastValuationSync: new Date().toISOString() },
+  { fundCode: 'RGFBII2', name: 'Regional Growth Fund II', totalFundValue: 2000000, adminFeeRate: '1.00%', custodianBank: 'NatWest', lastValuationSync: new Date().toISOString() }
+];
+
+// Default Covenants and Conditions Subsequent
+const defaultCovenants = [
+  { id: 'cov-1', loanId: '1101', companyName: 'Laing Project Limited', manager: 'Linda Wickstrom', type: 'Covenant', title: 'Q1 2026 Management Accounts', description: 'Submit Q1 unaudited management accounts within 45 days of quarter end.', dueDate: '2026-06-30', status: 'Pending', collectedDate: null, attachedFile: null, notes: '' },
+  { id: 'cov-2', loanId: '1101', companyName: 'Laing Project Limited', manager: 'Linda Wickstrom', type: 'Covenant', title: 'Annual Audited Accounts', description: 'Submit annual audited financial statements within 6 months of financial year end.', dueDate: '2026-09-30', status: 'Pending', collectedDate: null, attachedFile: null, notes: '' },
+  { id: 'cov-3', loanId: '1102', companyName: 'SolarTech Solutions', manager: 'Linda Wickstrom', type: 'Condition Subsequent', title: 'Charge Registration with Companies House', description: 'Register first legal charge over solar asset array with Companies House (Form MR01).', dueDate: '2026-05-15', status: 'Overdue', collectedDate: null, attachedFile: null, notes: '' },
+  { id: 'cov-4', loanId: '1102', companyName: 'SolarTech Solutions', manager: 'Linda Wickstrom', type: 'Covenant', title: 'Q2 2026 Management Accounts', description: 'Submit Q2 unaudited management accounts.', dueDate: '2026-07-31', status: 'Pending', collectedDate: null, attachedFile: null, notes: '' },
+  { id: 'cov-5', loanId: '1103', companyName: 'NextGen Bio', manager: 'Linda Wickstrom', type: 'Condition Subsequent', title: 'Proof of Opening Reserve Account', description: 'Provide bank statement showing opening of the debt service reserve account with £10,000.', dueDate: '2026-06-20', status: 'Collected', collectedDate: '2026-06-20T14:30:00Z', attachedFile: 'reserve_acct_statement.pdf', notes: 'Verified statement showing £10,000 balance in RBS reserve account. Confirmed satisfying Condition Subsequent.' },
+  { id: 'cov-6', loanId: '1103', companyName: 'NextGen Bio', manager: 'Linda Wickstrom', type: 'Covenant', title: 'Quarterly Environmental Impact Report', description: 'Submit quarterly bio-waste processing ESG report.', dueDate: '2026-07-15', status: 'Pending', collectedDate: null, attachedFile: null, notes: '' },
+  { id: 'cov-7', loanId: '1104', companyName: 'Newton Community Trust', manager: 'Linda Wickstrom', type: 'Covenant', title: 'Q1 2026 Management Accounts', description: 'Submit Q1 unaudited management accounts.', dueDate: '2026-05-31', status: 'Collected', collectedDate: '2026-05-28T10:15:00Z', attachedFile: 'Newton_Q1_26_Accounts.xlsx', notes: 'Received and reviewed. Operating surplus is in line with forecasts.' },
+  { id: 'cov-8', loanId: '1104', companyName: 'Newton Community Trust', manager: 'Linda Wickstrom', type: 'Condition Subsequent', title: 'Board Resolution for Grant Allocation', description: 'Provide signed copy of board resolution approving allocation of grant funds.', dueDate: '2026-06-10', status: 'Overdue', collectedDate: null, attachedFile: null, notes: '' }
+];
+
 // Reactive Svelte Stores
 export const customFields = writable(defaultFields);
 export const pipelineStages = writable(defaultStages);
@@ -522,6 +543,8 @@ export const opportunities = writable(defaultOpportunities);
 export const loans = writable(defaultLoans);
 export const auditLogs = writable(defaultAuditLogs);
 export const notifications = writable(defaultNotifications);
+export const covenants = writable(defaultCovenants);
+export const ncmFunds = writable(defaultNcmFunds);
 
 // Persona Selection (Defaulting to Administrator so all controls are visible)
 export const userRole = writable('Admin');
@@ -541,3 +564,45 @@ export const addNotification = (type, client, message, urgent = false) => {
     ...notifs
   ]);
 };
+
+// Covenant helper actions
+export const addCovenant = (cov) => {
+  covenants.update(list => [
+    {
+      id: 'cov-' + Math.random().toString(36).substr(2, 9),
+      collectedDate: null,
+      attachedFile: null,
+      notes: '',
+      ...cov
+    },
+    ...list
+  ]);
+};
+
+export const collectCovenant = (id, attachedFile, notes) => {
+  covenants.update(list =>
+    list.map(c => c.id === id ? {
+      ...c,
+      status: 'Collected',
+      collectedDate: new Date().toISOString(),
+      attachedFile,
+      notes
+    } : c)
+  );
+};
+
+export const requestCovenantData = (id) => {
+  covenants.update(list =>
+    list.map(c => {
+      if (c.id === id) {
+        addAuditLog('Relationship Manager', `Simulated reminder email dispatched to client for: "${c.title}" (${c.companyName})`);
+        return {
+          ...c,
+          notes: c.notes ? `${c.notes}\n[Sent Email Reminder on ${new Date().toLocaleDateString()}]` : `[Sent Email Reminder on ${new Date().toLocaleDateString()}]`
+        };
+      }
+      return c;
+    })
+  );
+};
+

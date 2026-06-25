@@ -5,15 +5,18 @@
     loans, 
     auditLogs, 
     notifications, 
-    userRole 
+    userRole,
+    covenants,
+    ncmFunds,
+    requestCovenantData
   } from '$lib/store.js';
 
   // Compute stats reactively
   $: activeLeadsCount = $leads.filter(l => l.status === 'active').length;
   $: activeOppsCount = $opportunities.filter(o => !o.booked).length;
   
-  // Total Portfolio Size = Booked loans total
-  $: totalPortfolioSize = $loans.reduce((acc, l) => acc + (Number(l.amount) || 0), 0);
+  // Total Portfolio Size = Booked loans total from Margill
+  $: totalPortfolioSize = $loans.filter(l => l.status === 'Active').reduce((acc, l) => acc + (Number(l.amount) || 0), 0);
   
   // Return Profile: calculate weighted average interest rate
   $: averageReturnRate = (() => {
@@ -32,14 +35,32 @@
     return (totalWeightedRate / totalAmount).toFixed(2) + '%';
   })();
 
-  // Dynamic charts ratios: Facility deployment ratios
-  $: facilityDeployment = (() => {
-    const counts = {};
-    $loans.forEach(l => {
-      counts[l.facility] = (counts[l.facility] || 0) + Number(l.amount);
+  // NCM total managed assets
+  $: ncmTotalAssets = $ncmFunds.reduce((acc, f) => acc + f.totalFundValue, 0);
+
+  // NCM unallocated cash reserves (Dry Powder)
+  $: ncmUnallocatedCash = ncmTotalAssets - totalPortfolioSize;
+
+  // Deployed vs Cash Dry Powder per Fund
+  $: ncmReservesPerFund = (() => {
+    const result = [];
+    $ncmFunds.forEach(f => {
+      const deployed = $loans.filter(l => l.status === 'Active' && l.fund === f.fundCode)
+                            .reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+      result.push({
+        fundCode: f.fundCode,
+        name: f.name,
+        deployed,
+        dryPowder: Math.max(0, f.totalFundValue - deployed),
+        total: f.totalFundValue
+      });
     });
-    return counts;
+    return result;
   })();
+
+  // Covenants statistics
+  $: pendingCovenants = $covenants.filter(c => c.status !== 'Collected');
+  $: overdueCovenantsCount = $covenants.filter(c => c.status === 'Overdue').length;
 
   // Compliance Alerts count
   $: urgentAlertsCount = $notifications.filter(n => n.urgent).length;
@@ -68,38 +89,38 @@
   <div class="kpi-grid">
     <div class="kpi-card glass-card">
       <div class="kpi-content">
-        <span class="kpi-label">Active Portfolio Size</span>
+        <span class="kpi-label">Margill Deployed Loans</span>
         <span class="kpi-value">£{totalPortfolioSize.toLocaleString()}</span>
-        <span class="kpi-sub green">↑ 100% synced to Margill</span>
+        <span class="kpi-sub green">↑ Active Servicing Ledger</span>
       </div>
       <div class="kpi-icon blue">💰</div>
     </div>
 
     <div class="kpi-card glass-card">
       <div class="kpi-content">
-        <span class="kpi-label">Weighted Return Profile</span>
-        <span class="kpi-value">{averageReturnRate}</span>
-        <span class="kpi-sub">Portfolio interest average</span>
+        <span class="kpi-label">NCM Administered Pool</span>
+        <span class="kpi-value">£{ncmTotalAssets.toLocaleString()}</span>
+        <span class="kpi-sub orange">Dry Powder: £{ncmUnallocatedCash.toLocaleString()}</span>
       </div>
-      <div class="kpi-icon green">📈</div>
+      <div class="kpi-icon purple">🏦</div>
     </div>
 
     <div class="kpi-card glass-card">
       <div class="kpi-content">
-        <span class="kpi-label">Pipeline Opportunities</span>
-        <span class="kpi-value">{activeOppsCount} Deals</span>
-        <span class="kpi-sub font-code">{activeLeadsCount} active lead intakes</span>
+        <span class="kpi-label">Weighted Return Profile</span>
+        <span class="kpi-value">{averageReturnRate}</span>
+        <span class="kpi-sub">Active interest yield average</span>
       </div>
-      <div class="kpi-icon purple">🎯</div>
+      <div class="kpi-icon green">📈</div>
     </div>
 
-    <div class="kpi-card glass-card" class:urgent-alert={urgentAlertsCount > 0}>
+    <div class="kpi-card glass-card" class:urgent-alert={overdueCovenantsCount > 0 || urgentAlertsCount > 0}>
       <div class="kpi-content">
-        <span class="kpi-label">Compliance Status</span>
-        <span class="kpi-value">{urgentAlertsCount > 0 ? `${urgentAlertsCount} Alerts` : 'Secured'}</span>
-        <span class="kpi-sub">{urgentAlertsCount > 0 ? 'Urgent AML flags pending' : 'KYC audit logs passing'}</span>
+        <span class="kpi-label">Covenant Compliance</span>
+        <span class="kpi-value">{overdueCovenantsCount > 0 ? `${overdueCovenantsCount} Overdue` : 'Passing'}</span>
+        <span class="kpi-sub">{overdueCovenantsCount > 0 ? 'Urgent covenants missing' : 'All CS/covenants clear'}</span>
       </div>
-      <div class="kpi-icon orange">🛡️</div>
+      <div class="kpi-icon orange">📋</div>
     </div>
   </div>
 
@@ -113,26 +134,37 @@
       {#if $userRole === 'Management Team' || $userRole === 'Admin' || $userRole === 'Operations'}
         <div class="glass-card section-card">
           <div class="section-header">
-            <h3>Facility Allocations & Targets</h3>
-            <p>Aggregate investment sizing by active facility product.</p>
+            <h3>🏦 NCM Fund Allocations: Margill Deployments vs Cash Reserves</h3>
+            <p>Compares active loans (Margill Ledger) against unallocated dry powder cash (NCM Administered).</p>
           </div>
 
           <div class="facility-chart-box">
-            {#each Object.entries(facilityDeployment) as [fac, val]}
+            {#each ncmReservesPerFund as fund}
+              {@const deployedPct = (fund.deployed / fund.total) * 100}
+              {@const dryPct = (fund.dryPowder / fund.total) * 100}
               <div class="chart-row">
                 <div class="chart-info">
-                  <span class="chart-fac-name">{fac}</span>
-                  <span class="chart-fac-val">£{val.toLocaleString()}</span>
+                  <span class="chart-fac-name" style="font-weight: 700;">{fund.name} ({fund.fundCode})</span>
+                  <span class="chart-fac-val">
+                    <span class="text-blue">£{fund.deployed.toLocaleString()} Deployed</span>
+                    <span class="text-muted"> / </span>
+                    <span class="text-green">£{fund.dryPowder.toLocaleString()} Cash</span>
+                  </span>
                 </div>
-                <div class="chart-bar-bg">
-                  <div class="chart-bar-fill" style="width: {(val / totalPortfolioSize * 100) || 0}%"></div>
+                <div class="chart-bar-bg" style="display: flex;">
+                  {#if fund.deployed > 0}
+                    <div class="chart-bar-fill-deployed" style="width: {deployedPct}%; height: 100%; background: linear-gradient(90deg, var(--accent-blue), #1a73e8);" title="Margill Deployed: £{fund.deployed.toLocaleString()}"></div>
+                  {/if}
+                  {#if fund.dryPowder > 0}
+                    <div class="chart-bar-fill-dry" style="width: {dryPct}%; height: 100%; background: linear-gradient(90deg, var(--accent-green), #27ae60);" title="NCM Dry Powder: £{fund.dryPowder.toLocaleString()}"></div>
+                  {/if}
+                </div>
+                <div class="chart-footer-info" style="display: flex; justify-content: space-between; font-size: 9px; color: var(--text-muted); margin-top: 2px;">
+                  <span>Total committed: £{fund.total.toLocaleString()}</span>
+                  <span>Fee rate: {$ncmFunds.find(f => f.fundCode === fund.fundCode)?.adminFeeRate}</span>
                 </div>
               </div>
             {/each}
-
-            {#if Object.keys(facilityDeployment).length === 0}
-              <div class="no-loans-placeholder">No loans active in ledger yet. Defer to Operations to book.</div>
-            {/if}
           </div>
         </div>
       {/if}
@@ -164,6 +196,41 @@
 
             {#if $notifications.length === 0}
               <div class="no-loans-placeholder green-txt">All client files verified. No flags active.</div>
+            {/if}
+          </div>
+        </div>
+      {/if}
+
+      <!-- Portfolio Covenants & CS Board (Visible to Relationship Manager, Admin, Management Team) -->
+      {#if $userRole === 'Relationship Manager' || $userRole === 'Admin' || $userRole === 'Management Team'}
+        <div class="glass-card section-card">
+          <div class="section-header">
+            <h3>📋 Portfolio Covenants & CS Control</h3>
+            <p>Track post-deal conditions subsequent and management accounts collection.</p>
+          </div>
+
+          <div class="alerts-list">
+            {#each pendingCovenants as cov}
+              <div class="alert-item" class:urgent={cov.status === 'Overdue'}>
+                <div class="alert-meta">
+                  <span class="alert-badge" class:urgent={cov.status === 'Overdue'}>
+                    {cov.type} - {cov.status}
+                  </span>
+                  <span class="alert-co">{cov.companyName}</span>
+                </div>
+                <p class="alert-msg"><strong>{cov.title}</strong>: {cov.description}</p>
+                <div class="alert-footer-row">
+                  <span class="alert-action-required">Due: {cov.dueDate} | IM: {cov.manager}</span>
+                  <div style="display: flex; gap: 8px;">
+                    <button class="resolve-btn" on:click={() => requestCovenantData(cov.id)} style="border-color: rgba(51, 153, 255, 0.2); color: var(--accent-blue);">Request Email</button>
+                    <a href="/covenants" class="resolve-btn" style="text-decoration: none; display: inline-block;">Collect</a>
+                  </div>
+                </div>
+              </div>
+            {/each}
+
+            {#if pendingCovenants.length === 0}
+              <div class="no-loans-placeholder green-txt">All covenants and conditions subsequent collected.</div>
             {/if}
           </div>
         </div>

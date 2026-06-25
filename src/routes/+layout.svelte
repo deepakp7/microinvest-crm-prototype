@@ -41,6 +41,12 @@
       <a href="/loans" class="nav-item" class:active={activePath.startsWith('/loans')}>
         <span class="icon">💸</span> Loan Booking
       </a>
+      <a href="/post-payments" class="nav-item" class:active={activePath.startsWith('/post-payments')}>
+        <span class="icon">🪙</span> Bulk Post Payments
+      </a>
+      <a href="/covenants" class="nav-item" class:active={activePath.startsWith('/covenants')}>
+        <span class="icon">📋</span> Portfolio Covenants
+      </a>
       <a href="/impact" class="nav-item" class:active={activePath.startsWith('/impact')}>
         <span class="icon">🌿</span> Impact Module
       </a>
