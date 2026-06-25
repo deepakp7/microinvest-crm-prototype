@@ -103,7 +103,8 @@ CREATE TABLE IF NOT EXISTS public.loans (
     unique_identifier2  text,
     other_info          text,
     borrower            jsonb,
-    custom_fields       jsonb
+    custom_fields       jsonb,
+    modifications       jsonb         NOT NULL DEFAULT '[]'::jsonb
 );
 
 -- ==========================================
@@ -129,6 +130,37 @@ CREATE TABLE IF NOT EXISTS public.notifications (
 );
 
 -- ==========================================
+-- 7. NCM FUNDS TABLE
+-- ==========================================
+CREATE TABLE IF NOT EXISTS public.ncm_funds (
+    fund_code             text          PRIMARY KEY, -- e.g. 'ACCESS2'
+    name                  text          NOT NULL,
+    total_fund_value      numeric       NOT NULL,
+    admin_fee_rate        text          NOT NULL,
+    custodian_bank        text          NOT NULL,
+    last_valuation_sync   timestamptz   NOT NULL DEFAULT now()
+);
+
+-- ==========================================
+-- 8. COVENANTS TABLE
+-- ==========================================
+CREATE TABLE IF NOT EXISTS public.covenants (
+    id                    text          PRIMARY KEY, -- e.g. 'cov-1'
+    loan_id               text          REFERENCES public.loans(loan_id) ON DELETE CASCADE,
+    company_name          text          NOT NULL,
+    manager               text          NOT NULL,
+    type                  text          NOT NULL, -- 'Covenant' or 'Condition Subsequent'
+    title                 text          NOT NULL,
+    description           text,
+    due_date              text          NOT NULL,
+    status                text          NOT NULL DEFAULT 'Pending', -- 'Pending', 'Overdue', 'Collected'
+    collected_date        timestamptz,
+    attached_file         text,
+    notes                 text,
+    created_at            timestamptz   NOT NULL DEFAULT now()
+);
+
+-- ==========================================
 -- INDEXES FOR PERFORMANCE
 -- ==========================================
 CREATE INDEX IF NOT EXISTS feedback_path_idx ON public.feedback (path);
@@ -148,6 +180,8 @@ ALTER TABLE public.opportunities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.loans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ncm_funds ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.covenants ENABLE ROW LEVEL SECURITY;
 
 -- feedback policies
 CREATE POLICY "Allow anon feedback insert" ON public.feedback FOR INSERT TO anon WITH CHECK (true);
@@ -172,6 +206,14 @@ CREATE POLICY "Allow anon audit_logs manage" ON public.audit_logs FOR ALL TO ano
 -- notifications policies
 CREATE POLICY "Allow authenticated notifications manage" ON public.notifications FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow anon notifications manage" ON public.notifications FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ncm_funds policies
+CREATE POLICY "Allow authenticated ncm_funds manage" ON public.ncm_funds FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow anon ncm_funds manage" ON public.ncm_funds FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- covenants policies
+CREATE POLICY "Allow authenticated covenants manage" ON public.covenants FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow anon covenants manage" ON public.covenants FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- ==========================================
 -- SEED DATA (FROM store.js PROTOTYPE DEFAULTS)
@@ -264,3 +306,27 @@ VALUES
   ('not-2', 'KYC Check', 'Apex Housing Group', 'AML validation query flagged on address matching', true, now()),
   ('not-3', 'Operations Task', 'NextGen Bio', 'Upload signed facility letter', false, now())
 ON CONFLICT (id) DO NOTHING;
+
+-- Seed NCM Funds
+INSERT INTO public.ncm_funds (fund_code, name, total_fund_value, admin_fee_rate, custodian_bank)
+VALUES
+  ('ACCESS2', 'Access 2 Growth Fund', 10000000, '0.95%', 'Royal Bank of Scotland'),
+  ('PFP', 'People''s Fund Portfolio', 5000000, '1.20%', 'HSBC UK'),
+  ('ESM', 'Enterprise Social Microfinance', 4000000, '1.10%', 'Barclays Bank'),
+  ('BIIGLA', 'Big Issue Growth Loan Admin', 3000000, '0.85%', 'Lloyds Bank'),
+  ('RGFBII2', 'Regional Growth Fund II', 2000000, '1.00%', 'NatWest')
+ON CONFLICT (fund_code) DO NOTHING;
+
+-- Seed Covenants
+INSERT INTO public.covenants (id, loan_id, company_name, manager, type, title, description, due_date, status, collected_date, attached_file, notes)
+VALUES
+  ('cov-1', '1101', 'Laing Project Limited', 'Linda Wickstrom', 'Covenant', 'Q1 2026 Management Accounts', 'Submit Q1 unaudited management accounts within 45 days of quarter end.', '2026-06-30', 'Pending', NULL, NULL, ''),
+  ('cov-2', '1101', 'Laing Project Limited', 'Linda Wickstrom', 'Covenant', 'Annual Audited Accounts', 'Submit annual audited financial statements within 6 months of financial year end.', '2026-09-30', 'Pending', NULL, NULL, ''),
+  ('cov-3', '1102', 'SolarTech Solutions', 'Linda Wickstrom', 'Condition Subsequent', 'Charge Registration with Companies House', 'Register first legal charge over solar asset array with Companies House (Form MR01).', '2026-05-15', 'Overdue', NULL, NULL, ''),
+  ('cov-4', '1102', 'SolarTech Solutions', 'Linda Wickstrom', 'Covenant', 'Q2 2026 Management Accounts', 'Submit Q2 unaudited management accounts.', '2026-07-31', 'Pending', NULL, NULL, ''),
+  ('cov-5', '1103', 'NextGen Bio', 'Linda Wickstrom', 'Condition Subsequent', 'Proof of Opening Reserve Account', 'Provide bank statement showing opening of the debt service reserve account with £10,000.', '2026-06-20', 'Collected', '2026-06-20T14:30:00Z', 'reserve_acct_statement.pdf', 'Verified statement showing £10,000 balance in RBS reserve account. Confirmed satisfying Condition Subsequent.'),
+  ('cov-6', '1103', 'NextGen Bio', 'Linda Wickstrom', 'Covenant', 'Quarterly Environmental Impact Report', 'Submit quarterly bio-waste processing ESG report.', '2026-07-15', 'Pending', NULL, NULL, ''),
+  ('cov-7', '1104', 'Newton Community Trust', 'Linda Wickstrom', 'Covenant', 'Q1 2026 Management Accounts', 'Submit Q1 unaudited management accounts.', '2026-05-31', 'Collected', '2026-05-28T10:15:00Z', 'Newton_Q1_26_Accounts.xlsx', 'Received and reviewed. Operating surplus is in line with forecasts.'),
+  ('cov-8', '1104', 'Newton Community Trust', 'Linda Wickstrom', 'Condition Subsequent', 'Board Resolution for Grant Allocation', 'Provide signed copy of board resolution approving allocation of grant funds.', '2026-06-10', 'Overdue', NULL, NULL, '')
+ON CONFLICT (id) DO NOTHING;
+
