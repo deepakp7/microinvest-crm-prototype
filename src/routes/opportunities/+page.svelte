@@ -1,5 +1,5 @@
 <script>
-  import { opportunities, pipelineStages, addAuditLog, userRole } from '$lib/store.js';
+  import { opportunities, pipelineStages, addAuditLog, userRole, toggleChecklistItem, addChecklistItem } from '$lib/store.js';
 
   let selectedOpportunity = null;
   let showDetailModal = false;
@@ -44,6 +44,32 @@
     const targetStage = $pipelineStages.find(s => s.id === targetStageId);
     if (!targetStage) return;
 
+    const opp = $opportunities.find(o => o.id === oppId);
+    if (!opp) return;
+
+    // Compliance gatekeeper logic: block move to won unless checklists are completed
+    if (targetStageId === 'won') {
+      const checklist = opp.checklist || {};
+      let allCompleted = true;
+      let incompleteItems = [];
+      const checklistStages = ['pre_dd', 'dd', 'ic', 'approved', 'signed'];
+
+      for (const stageId of checklistStages) {
+        const items = checklist[stageId] || [];
+        for (const item of items) {
+          if (!item.completed) {
+            allCompleted = false;
+            incompleteItems.push(`${item.label}`);
+          }
+        }
+      }
+
+      if (!allCompleted) {
+        alert(`⚠️ Pre-Disbursement Compliance Audit Failed!\n\nCannot move "${opp.companyName}" to Disbursed/Won yet. Please complete all checklist items across all stages first.\n\nOutstanding Items:\n- ${incompleteItems.join('\n- ')}`);
+        return;
+      }
+    }
+
     opportunities.update(list => 
       list.map(o => {
         if (o.id === oppId) {
@@ -51,16 +77,16 @@
           const emails = [...(o.emailsTriggered || [])];
 
           // Trigger email logic based on lifecycle state changes
-          if (targetStageId === 'qualified' && prevStage === 'prospect') {
+          if (targetStageId === 'dd' && prevStage === 'pre_dd') {
             emails.push({
               date: new Date().toISOString(),
-              subject: 'Opportunity Stage Updated: Qualified Verification',
+              subject: 'Opportunity Stage Updated: Due Diligence Verification',
               recipient: o.email
             });
-          } else if (targetStageId === 'proposal') {
+          } else if (targetStageId === 'approved') {
             emails.push({
               date: new Date().toISOString(),
-              subject: 'Investment Proposal Request - MicroInvest',
+              subject: 'Investment Proposal Approved - Facility Letter Issued',
               recipient: o.email
             });
           } else if (targetStageId === 'won') {
@@ -87,6 +113,9 @@
     // Update the local modal view state if currently open
     if (selectedOpportunity && selectedOpportunity.id === oppId) {
       selectedOpportunity = $opportunities.find(o => o.id === oppId);
+      if (targetStageId !== 'won' && targetStageId !== 'lost') {
+        activeChecklistStage = targetStageId;
+      }
     }
   }
 
@@ -108,9 +137,30 @@
     selectedOpportunity = $opportunities.find(o => o.id === oppId);
   }
 
+  let activeChecklistStage = 'pre_dd';
+  let newChecklistItemText = '';
+
   function openDetails(opp) {
     selectedOpportunity = opp;
+    if (opp.stage !== 'won' && opp.stage !== 'lost') {
+      activeChecklistStage = opp.stage;
+    } else {
+      activeChecklistStage = 'signed';
+    }
+    newChecklistItemText = '';
     showDetailModal = true;
+  }
+
+  function handleToggleCheck(oppId, stageId, itemId) {
+    toggleChecklistItem(oppId, stageId, itemId);
+    selectedOpportunity = $opportunities.find(o => o.id === oppId);
+  }
+
+  function handleAddCheckItem(oppId, stageId) {
+    if (!newChecklistItemText.trim()) return;
+    addChecklistItem(oppId, stageId, newChecklistItemText);
+    newChecklistItemText = '';
+    selectedOpportunity = $opportunities.find(o => o.id === oppId);
   }
 </script>
 
@@ -250,6 +300,78 @@
                   {/each}
                 </select>
               </div>
+            </div>
+
+            <!-- Pipeline Compliance Checklist Panel -->
+            <div class="detail-group checklist-section">
+              <span class="grp-label">📋 Stage Checklist Progress:</span>
+              
+              <div class="stage-tabs">
+                {#each $pipelineStages.filter(s => s.id !== 'won' && s.id !== 'lost') as s}
+                  <button 
+                    type="button"
+                    class="tab-btn" 
+                    class:active={activeChecklistStage === s.id} 
+                    on:click={() => activeChecklistStage = s.id}
+                  >
+                    {s.label.replace('Pre-Due Diligence', 'Pre-DD').replace('Due Diligence', 'DD').replace('Ready for Investment Committee', 'Ready for IC').replace('Loan Approved', 'Approved').replace('Deal Signed', 'Signed')}
+                    {#if selectedOpportunity.checklist?.[s.id]}
+                      {@const comp = selectedOpportunity.checklist[s.id].filter(i => i.completed).length}
+                      {@const tot = selectedOpportunity.checklist[s.id].length}
+                      <span class="tab-badge" class:badge-completed={comp === tot && tot > 0}>
+                        {comp}/{tot}
+                      </span>
+                    {/if}
+                  </button>
+                {/each}
+              </div>
+
+              {#if selectedOpportunity.checklist?.[activeChecklistStage]}
+                {@const items = selectedOpportunity.checklist[activeChecklistStage]}
+                {@const completedCount = items.filter(i => i.completed).length}
+                {@const totalCount = items.length}
+                {@const percent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0}
+                
+                <div class="checklist-progress-bar-container">
+                  <div class="checklist-progress-header">
+                    <span>Stage Completion: {completedCount} of {totalCount} completed ({percent}%)</span>
+                  </div>
+                  <div class="progress-track">
+                    <div class="progress-fill" style="width: {percent}%"></div>
+                  </div>
+                </div>
+
+                <div class="checklist-items">
+                  {#each items as item (item.id)}
+                    <label class="checklist-item-row">
+                      <input 
+                        type="checkbox" 
+                        checked={item.completed} 
+                        on:change={() => handleToggleCheck(selectedOpportunity.id, activeChecklistStage, item.id)}
+                      />
+                      <span class="checklist-label" class:completed={item.completed}>{item.label}</span>
+                    </label>
+                  {/each}
+                  
+                  {#if items.length === 0}
+                    <p class="empty-checklist">No checklist items defined for this stage.</p>
+                  {/if}
+                </div>
+
+                <div class="add-checklist-item-row">
+                  <input 
+                    type="text" 
+                    placeholder="Add custom compliance requirement..." 
+                    bind:value={newChecklistItemText} 
+                    on:keydown={(e) => e.key === 'Enter' && handleAddCheckItem(selectedOpportunity.id, activeChecklistStage)}
+                  />
+                  <button type="button" class="btn-secondary" on:click={() => handleAddCheckItem(selectedOpportunity.id, activeChecklistStage)}>
+                    Add Item
+                  </button>
+                </div>
+              {:else}
+                <p class="empty-checklist">No checklist available for this stage.</p>
+              {/if}
             </div>
 
             <!-- Notes Section -->
@@ -821,5 +943,159 @@
     color: var(--text-muted);
     text-align: center;
     padding: 40px 0;
+  }
+
+  /* Checklist styles inside Opportunity details modal */
+  .checklist-section {
+    background: rgba(255, 255, 255, 0.01);
+    border: 1px solid var(--border-color);
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+
+  .stage-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
+  }
+
+  .tab-btn {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-color);
+    padding: 6px 10px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: var(--transition-smooth);
+  }
+
+  .tab-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-glass-hover);
+    border-color: var(--border-color-hover);
+  }
+
+  .tab-btn.active {
+    color: #fff;
+    background: rgba(51, 153, 255, 0.15);
+    border-color: var(--accent-blue);
+  }
+
+  .tab-badge {
+    font-size: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: var(--text-secondary);
+  }
+
+  .tab-btn.active .tab-badge {
+    background: rgba(51, 153, 255, 0.3);
+    color: #fff;
+  }
+
+  .tab-badge.badge-completed {
+    background: rgba(46, 204, 113, 0.2);
+    color: var(--accent-green);
+  }
+
+  .checklist-progress-bar-container {
+    margin-bottom: 14px;
+  }
+
+  .checklist-progress-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+
+  .progress-track {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-green));
+    transition: width 0.4s ease-out;
+  }
+
+  .checklist-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 180px;
+    overflow-y: auto;
+    margin-bottom: 14px;
+    padding-right: 4px;
+  }
+
+  .checklist-item-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 4px 0;
+  }
+
+  .checklist-item-row input[type="checkbox"] {
+    cursor: pointer;
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent-blue);
+  }
+
+  .checklist-label {
+    transition: var(--transition-smooth);
+  }
+
+  .checklist-label.completed {
+    color: var(--text-muted);
+    text-decoration: line-through;
+  }
+
+  .empty-checklist {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 10px 0;
+  }
+
+  .add-checklist-item-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .add-checklist-item-row input {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .add-checklist-item-row input::placeholder {
+    color: var(--text-muted);
+  }
+
+  .add-checklist-item-row button {
+    padding: 8px 12px;
+    font-size: 11px;
+    border-radius: 6px;
   }
 </style>

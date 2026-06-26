@@ -68,8 +68,11 @@ CREATE TABLE IF NOT EXISTS public.opportunities (
     loan_id             text,
     margill_synced      boolean       NOT NULL DEFAULT false,
     accounting_synced   boolean       NOT NULL DEFAULT false,
+    checklist           jsonb         NOT NULL DEFAULT '{}'::jsonb,
     created_at          timestamptz   NOT NULL DEFAULT now()
 );
+
+ALTER TABLE public.opportunities ADD COLUMN IF NOT EXISTS checklist jsonb NOT NULL DEFAULT '{}'::jsonb;
 
 -- ==========================================
 -- 4. LOANS TABLE
@@ -106,6 +109,26 @@ CREATE TABLE IF NOT EXISTS public.loans (
     custom_fields       jsonb,
     modifications       jsonb         NOT NULL DEFAULT '[]'::jsonb
 );
+
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS remaining_balance numeric;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS next_payment_num integer NOT NULL DEFAULT 1;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS origination_date text;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS first_payment_date text;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS fund text;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS creditor text;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS compounding_period text;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS payment_frequency text;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS payment_method text;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS sub_status text;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS accounting_id text;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS file_no text;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS max_credit numeric;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS unique_identifier1 text;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS unique_identifier2 text;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS other_info text;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS borrower jsonb;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS custom_fields jsonb;
+ALTER TABLE public.loans ADD COLUMN IF NOT EXISTS modifications jsonb NOT NULL DEFAULT '[]'::jsonb;
 
 -- ==========================================
 -- 5. AUDIT LOGS TABLE
@@ -245,12 +268,19 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Seed Opportunities
-INSERT INTO public.opportunities (id, company_name, contact_name, email, phone, investment_facility, deal_size, esg_rating, stage, probability, emails_triggered, notes, booked, loan_id, margill_synced, accounting_synced)
+INSERT INTO public.opportunities (id, company_name, contact_name, email, phone, investment_facility, deal_size, esg_rating, stage, probability, emails_triggered, notes, booked, loan_id, margill_synced, accounting_synced, checklist)
 VALUES
-  ('opp-1', 'SolarTech Solutions', 'Alice Vane', 'alice@solartech.io', '+44 20 7946 2631', 'Renewable Energy Dev Loan', 1200000, 'AAA (Exceptional)', 'prospect', 10, '[{"date": "2026-06-10T10:15:00Z", "subject": "Welcome to MicroInvest Lead Portal", "recipient": "alice@solartech.io"}]'::jsonb, 'Initial discussion on funding solar microgrid expansion in California.', false, NULL, false, false),
-  ('opp-2', 'NextGen Bio', 'Clara Chen', 'clara@nextgenbio.co', '+44 20 7946 4432', 'Tech Innovation Venture', 850000, 'A (Moderate)', 'proposal', 60, '[{"date": "2026-06-12T09:05:00Z", "subject": "Welcome to MicroInvest Lead Portal", "recipient": "clara@nextgenbio.co"}, {"date": "2026-06-13T11:00:00Z", "subject": "Investment Proposal Request - NextGen Bio", "recipient": "clara@nextgenbio.co"}]'::jsonb, 'Proposal submitted. Executive committee reviewing alignment with regional tech dev directives.', false, NULL, false, false),
-  ('opp-3', 'Greenfield Wind Farm', 'David Wright', 'david@greenfieldwind.com', '+44 20 7946 0144', 'Renewable Energy Dev Loan', 8000000, 'AAA (Exceptional)', 'won', 100, '[{"date": "2026-06-01T08:00:00Z", "subject": "Welcome to MicroInvest Lead Portal", "recipient": "david@greenfieldwind.com"}, {"date": "2026-06-05T15:30:00Z", "subject": "Investment Proposal Request", "recipient": "david@greenfieldwind.com"}, {"date": "2026-06-09T09:12:00Z", "subject": "Loan Booking Confirmation - Greenfield Wind Farm", "recipient": "david@greenfieldwind.com"}]'::jsonb, 'Loan confirmed and booked. Handed over to operations for disbursement.', true, 'LN-2026-0043', true, true),
-  ('opp-4', 'Apex Housing Group', 'Bob Miller', 'bob@apexhousing.com', '+44 20 7946 9012', 'Urban Housing Fund', 4500000, 'AA (High Impact)', 'won', 100, '[{"date": "2026-06-11T14:30:00Z", "subject": "Welcome to MicroInvest Lead Portal", "recipient": "bob@apexhousing.com"}, {"date": "2026-06-13T10:00:00Z", "subject": "Investment Proposal Request - Apex Housing Group", "recipient": "bob@apexhousing.com"}, {"date": "2026-06-14T16:45:00Z", "subject": "Deal Won - Loan Booking Confirmation Pending", "recipient": "bob@apexhousing.com"}]'::jsonb, 'Deal successfully closed. Awaiting Operations to book and disburse via Margill.', false, NULL, false, false)
+  ('opp-1', 'SolarTech Solutions', 'Alice Vane', 'alice@solartech.io', '+44 20 7946 2631', 'Renewable Energy Dev Loan', 1200000, 'AAA (Exceptional)', 'pre_dd', 10, '[{"date": "2026-06-10T10:15:00Z", "subject": "Welcome to MicroInvest Lead Portal", "recipient": "alice@solartech.io"}]'::jsonb, 'Initial discussion on funding solar microgrid expansion in California.', false, NULL, false, false,
+   '{"pre_dd": [{"id": "kyc_pass", "label": "KYC & AML Pass Verification", "completed": true}, {"id": "fca_check", "label": "FCA Registration Verification", "completed": false}], "dd": [{"id": "financial_dd", "label": "Financial Due Diligence Report Signed Off", "completed": false}, {"id": "esg_review", "label": "ESG Sizing & Impact Assessment Done", "completed": false}], "ic": [{"id": "ic_proposal", "label": "IC Investment Memorandum Submitted", "completed": false}, {"id": "ic_approval", "label": "IC Approval Minute Uploaded", "completed": false}], "approved": [{"id": "facility_letter", "label": "Facility Letter Issued to Borrower", "completed": false}, {"id": "credit_committee", "label": "Credit Committee Minute Signed", "completed": false}], "signed": [{"id": "debenture", "label": "Debenture signed & received", "completed": false}, {"id": "charge_agreement", "label": "Charge Agreement signed", "completed": false}, {"id": "director_guarantees", "label": "Director Personal Guarantees signed", "completed": false}, {"id": "legal_opinion", "label": "Borrower Legal Opinion letter received", "completed": false}]}'::jsonb),
+  
+  ('opp-2', 'NextGen Bio', 'Clara Chen', 'clara@nextgenbio.co', '+44 20 7946 4432', 'Tech Innovation Venture', 850000, 'A (Moderate)', 'ic', 60, '[{"date": "2026-06-12T09:05:00Z", "subject": "Welcome to MicroInvest Lead Portal", "recipient": "clara@nextgenbio.co"}, {"date": "2026-06-13T11:00:00Z", "subject": "Investment Proposal Request - NextGen Bio", "recipient": "clara@nextgenbio.co"}]'::jsonb, 'Proposal submitted. Executive committee reviewing alignment with regional tech dev directives.', false, NULL, false, false,
+   '{"pre_dd": [{"id": "kyc_pass", "label": "KYC & AML Pass Verification", "completed": true}, {"id": "fca_check", "label": "FCA Registration Verification", "completed": true}], "dd": [{"id": "financial_dd", "label": "Financial Due Diligence Report Signed Off", "completed": true}, {"id": "esg_review", "label": "ESG Sizing & Impact Assessment Done", "completed": true}], "ic": [{"id": "ic_proposal", "label": "IC Investment Memorandum Submitted", "completed": true}, {"id": "ic_approval", "label": "IC Approval Minute Uploaded", "completed": false}], "approved": [{"id": "facility_letter", "label": "Facility Letter Issued to Borrower", "completed": false}, {"id": "credit_committee", "label": "Credit Committee Minute Signed", "completed": false}], "signed": [{"id": "debenture", "label": "Debenture signed & received", "completed": false}, {"id": "charge_agreement", "label": "Charge Agreement signed", "completed": false}, {"id": "director_guarantees", "label": "Director Personal Guarantees signed", "completed": false}, {"id": "legal_opinion", "label": "Borrower Legal Opinion letter received", "completed": false}]}'::jsonb),
+  
+  ('opp-3', 'Greenfield Wind Farm', 'David Wright', 'david@greenfieldwind.com', '+44 20 7946 0144', 'Renewable Energy Dev Loan', 8000000, 'AAA (Exceptional)', 'won', 100, '[{"date": "2026-06-01T08:00:00Z", "subject": "Welcome to MicroInvest Lead Portal", "recipient": "david@greenfieldwind.com"}, {"date": "2026-06-05T15:30:00Z", "subject": "Investment Proposal Request", "recipient": "david@greenfieldwind.com"}, {"date": "2026-06-09T09:12:00Z", "subject": "Loan Booking Confirmation - Greenfield Wind Farm", "recipient": "david@greenfieldwind.com"}]'::jsonb, 'Loan confirmed and booked. Handed over to operations for disbursement.', true, 'LN-2026-0043', true, true,
+   '{"pre_dd": [{"id": "kyc_pass", "label": "KYC & AML Pass Verification", "completed": true}, {"id": "fca_check", "label": "FCA Registration Verification", "completed": true}], "dd": [{"id": "financial_dd", "label": "Financial Due Diligence Report Signed Off", "completed": true}, {"id": "esg_review", "label": "ESG Sizing & Impact Assessment Done", "completed": true}], "ic": [{"id": "ic_proposal", "label": "IC Investment Memorandum Submitted", "completed": true}, {"id": "ic_approval", "label": "IC Approval Minute Uploaded", "completed": true}], "approved": [{"id": "facility_letter", "label": "Facility Letter Issued to Borrower", "completed": true}, {"id": "credit_committee", "label": "Credit Committee Minute Signed", "completed": true}], "signed": [{"id": "debenture", "label": "Debenture signed & received", "completed": true}, {"id": "charge_agreement", "label": "Charge Agreement signed", "completed": true}, {"id": "director_guarantees", "label": "Director Personal Guarantees signed", "completed": true}, {"id": "legal_opinion", "label": "Borrower Legal Opinion letter received", "completed": true}]}'::jsonb),
+  
+  ('opp-4', 'Apex Housing Group', 'Bob Miller', 'bob@apexhousing.com', '+44 20 7946 9012', 'Urban Housing Fund', 4500000, 'AA (High Impact)', 'signed', 90, '[{"date": "2026-06-11T14:30:00Z", "subject": "Welcome to MicroInvest Lead Portal", "recipient": "bob@apexhousing.com"}, {"date": "2026-06-13T10:00:00Z", "subject": "Investment Proposal Request - Apex Housing Group", "recipient": "bob@apexhousing.com"}, {"date": "2026-06-14T16:45:00Z", "subject": "Deal Won - Loan Booking Confirmation Pending", "recipient": "bob@apexhousing.com"}]'::jsonb, 'Deal successfully closed. Awaiting Operations to book and disburse via Margill.', false, NULL, false, false,
+   '{"pre_dd": [{"id": "kyc_pass", "label": "KYC & AML Pass Verification", "completed": true}, {"id": "fca_check", "label": "FCA Registration Verification", "completed": true}], "dd": [{"id": "financial_dd", "label": "Financial Due Diligence Report Signed Off", "completed": true}, {"id": "esg_review", "label": "ESG Sizing & Impact Assessment Done", "completed": true}], "ic": [{"id": "ic_proposal", "label": "IC Investment Memorandum Submitted", "completed": true}, {"id": "ic_approval", "label": "IC Approval Minute Uploaded", "completed": true}], "approved": [{"id": "facility_letter", "label": "Facility Letter Issued to Borrower", "completed": true}, {"id": "credit_committee", "label": "Credit Committee Minute Signed", "completed": true}], "signed": [{"id": "debenture", "label": "Debenture signed & received", "completed": true}, {"id": "charge_agreement", "label": "Charge Agreement signed", "completed": true}, {"id": "director_guarantees", "label": "Director Personal Guarantees signed", "completed": false}, {"id": "legal_opinion", "label": "Borrower Legal Opinion letter received", "completed": false}]}'::jsonb)
 ON CONFLICT (id) DO NOTHING;
 
 -- Seed Loans

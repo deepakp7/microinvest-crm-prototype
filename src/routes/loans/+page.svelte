@@ -1,5 +1,5 @@
 <script>
-  import { opportunities, loans, auditLogs, addAuditLog, userRole } from '$lib/store.js';
+  import { opportunities, loans, auditLogs, addAuditLog, userRole, toggleChecklistItem } from '$lib/store.js';
 
   // Active tab selection
   let activeTab = 'database'; // 'database', 'bulk', 'integrations'
@@ -53,8 +53,47 @@
   let bulkSelectedRows = {}; // maps loanId -> boolean
   let bulkPaymentAmounts = {}; // maps loanId -> amount
 
-  // Filter won opportunities not yet booked
-  $: pendingBookings = $opportunities.filter(o => o.stage === 'won' && !o.booked);
+  // Filter signed or won opportunities not yet booked
+  $: pendingBookings = $opportunities.filter(o => (o.stage === 'signed' || o.stage === 'won') && !o.booked);
+
+  $: selectedOpp = $opportunities.find(o => o.id === selectedOppId);
+  $: checklistStages = ['pre_dd', 'dd', 'ic', 'approved', 'signed'];
+  $: selectedOppChecklistStatus = (() => {
+    if (!selectedOpp) return { allCompleted: true, total: 0, completed: 0, items: [] };
+    const itemsList = [];
+    let completedCount = 0;
+    let totalCount = 0;
+    
+    const stageLabels = {
+      pre_dd: 'Pre-Due Diligence',
+      dd: 'Due Diligence',
+      ic: 'Ready for Investment Committee',
+      approved: 'Loan Approved',
+      signed: 'Deal Signed'
+    };
+
+    for (const stageId of checklistStages) {
+      const stageItems = selectedOpp.checklist?.[stageId] || [];
+      for (const item of stageItems) {
+        totalCount++;
+        if (item.completed) {
+          completedCount++;
+        }
+        itemsList.push({
+          stageId,
+          stageLabel: stageLabels[stageId] || stageId,
+          ...item
+        });
+      }
+    }
+    
+    return {
+      allCompleted: completedCount === totalCount,
+      total: totalCount,
+      completed: completedCount,
+      items: itemsList
+    };
+  })();
 
   // Auto-generate Margill ID preview
   $: {
@@ -467,7 +506,7 @@
     loans.update(current => [...current, newLoan]);
 
     opportunities.update(list =>
-      list.map(o => o.id === opp.id ? { ...o, booked: true, loanId: customLoanId } : o)
+      list.map(o => o.id === opp.id ? { ...o, stage: 'won', booked: true, loanId: customLoanId } : o)
     );
 
     // Simulated API Payload logs
@@ -1430,7 +1469,7 @@
                 <div class="form-group">
                   <label for="oppSelect">Select Approved Deal</label>
                   <select id="oppSelect" bind:value={selectedOppId} required>
-                    <option value="">-- Choose a Won Opportunity --</option>
+                    <option value="">-- Choose a Deal to Book --</option>
                     {#each pendingBookings as opp}
                       <option value={opp.id}>{opp.companyName} (£{opp.dealSize.toLocaleString()})</option>
                     {/each}
@@ -1480,7 +1519,76 @@
                   </div>
                 </div>
 
-                <button type="submit" class="btn-primary w-full">Confirm Booking & Sync API</button>
+                {#if selectedOpp}
+                  <div class="compliance-audit-card" class:non-compliant={!selectedOppChecklistStatus.allCompleted} class:compliant={selectedOppChecklistStatus.allCompleted}>
+                    <div class="compliance-header">
+                      <span class="compliance-shield">🛡️</span>
+                      <h3>Pre-Disbursement Compliance Checklist Audit</h3>
+                    </div>
+
+                    {#if !selectedOppChecklistStatus.allCompleted}
+                      <div class="compliance-banner warn-banner">
+                        <span class="banner-icon">⚠️</span>
+                        <div>
+                          <strong>Pre-Disbursement Audit Failed</strong>
+                          <p>{selectedOppChecklistStatus.total - selectedOppChecklistStatus.completed} outstanding compliance items must be completed before funding.</p>
+                        </div>
+                      </div>
+                    {:else}
+                      <div class="compliance-banner success-banner">
+                        <span class="banner-icon">✅</span>
+                        <div>
+                          <strong>Pre-Disbursement Audit Passed</strong>
+                          <p>All checklist tasks are completed. Ready for funding.</p>
+                        </div>
+                      </div>
+                    {/if}
+
+                    <div class="compliance-stages-list">
+                      {#each checklistStages as stageId}
+                        {@const stageItems = selectedOpp.checklist?.[stageId] || []}
+                        {@const completedCount = stageItems.filter(i => i.completed).length}
+                        {@const totalCount = stageItems.length}
+                        {@const stageLabel = {
+                          pre_dd: 'Pre-Due Diligence',
+                          dd: 'Due Diligence',
+                          ic: 'Ready for IC',
+                          approved: 'Loan Approved',
+                          signed: 'Deal Signed'
+                        }[stageId]}
+                        {@const isStageDone = completedCount === totalCount && totalCount > 0}
+
+                        <div class="compliance-stage-row" class:stage-done={isStageDone}>
+                          <div class="stage-meta-row">
+                            <span class="compliance-dot" class:dot-done={isStageDone}></span>
+                            <span class="compliance-stage-name">{stageLabel}</span>
+                            <span class="compliance-fraction">{completedCount}/{totalCount}</span>
+                          </div>
+                          
+                          {#if stageItems.length > 0}
+                            <div class="compliance-item-details">
+                              {#each stageItems as item}
+                                <label class="compliance-item-line" class:item-pending={!item.completed}>
+                                  <input 
+                                    type="checkbox" 
+                                    checked={item.completed} 
+                                    on:change={() => {
+                                      toggleChecklistItem(selectedOpp.id, stageId, item.id);
+                                    }}
+                                  />
+                                  <span class="item-label-txt">{item.label}</span>
+                                  <span class="item-status-tag">{item.completed ? 'Completed' : 'Pending'}</span>
+                                </label>
+                              {/each}
+                            </div>
+                          {/if}
+                        </div>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+
+                <button type="submit" class="btn-primary w-full" disabled={!selectedOppChecklistStatus.allCompleted}>Confirm Booking & Sync API</button>
               </form>
             {/if}
           </div>
@@ -2565,5 +2673,170 @@
 
   .fade-in {
     animation: fadeIn 0.3s ease-out;
+  }
+
+  /* Compliance Audit Panel styles */
+  .compliance-audit-card {
+    background: rgba(255, 255, 255, 0.01);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+    margin: 20px 0;
+    transition: var(--transition-smooth);
+  }
+
+  .compliance-audit-card.non-compliant {
+    border-color: rgba(231, 76, 60, 0.2);
+    background: rgba(231, 76, 60, 0.02);
+  }
+
+  .compliance-audit-card.compliant {
+    border-color: rgba(46, 204, 113, 0.2);
+    background: rgba(46, 204, 113, 0.02);
+  }
+
+  .compliance-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .compliance-header h3 {
+    font-size: 14px;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .compliance-shield {
+    font-size: 16px;
+  }
+
+  .compliance-banner {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+
+  .compliance-banner.warn-banner {
+    background: rgba(231, 76, 60, 0.1);
+    border: 1px solid rgba(231, 76, 60, 0.2);
+    color: #f19086;
+  }
+
+  .compliance-banner.success-banner {
+    background: rgba(46, 204, 113, 0.1);
+    border: 1px solid rgba(46, 204, 113, 0.2);
+    color: #a3e4d7;
+  }
+
+  .compliance-banner p {
+    margin: 2px 0 0 0;
+    font-size: 11px;
+    opacity: 0.8;
+  }
+
+  .compliance-stages-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .compliance-stage-row {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.2);
+  }
+
+  .compliance-stage-row.stage-done {
+    border-color: rgba(46, 204, 113, 0.15);
+  }
+
+  .stage-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .compliance-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+  }
+
+  .compliance-dot.dot-done {
+    background: var(--accent-green);
+    box-shadow: 0 0 6px var(--accent-green);
+  }
+
+  .compliance-stage-name {
+    font-size: 11px;
+    font-weight: 700;
+    flex: 1;
+  }
+
+  .compliance-fraction {
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .compliance-item-details {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 14px;
+    border-left: 1px dashed var(--border-color);
+    margin-top: 4px;
+  }
+
+  .compliance-item-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    padding: 2px 0;
+    cursor: pointer;
+  }
+
+  .compliance-item-line input[type="checkbox"] {
+    cursor: pointer;
+    width: 12px;
+    height: 12px;
+    accent-color: var(--accent-blue);
+  }
+
+  .item-label-txt {
+    flex: 1;
+  }
+
+  .item-status-tag {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: rgba(46, 204, 113, 0.15);
+    color: var(--accent-green);
+  }
+
+  .item-pending .item-status-tag {
+    background: rgba(231, 76, 60, 0.15);
+    color: var(--accent-red);
+  }
+
+  .btn-primary:disabled {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border: 1px solid var(--border-color) !important;
+    color: var(--text-muted) !important;
+    box-shadow: none !important;
+    cursor: not-allowed;
+    transform: none !important;
   }
 </style>

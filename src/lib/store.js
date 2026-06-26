@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 
 // Default dynamic fields configured for Lead/Opportunity models (Low-Code configuration)
 const defaultFields = [
@@ -46,10 +46,12 @@ const defaultFields = [
 
 // Default lifecycle pipeline stages
 const defaultStages = [
-  { id: 'prospect', label: 'Prospect', probability: 10, color: '#f39c12' },
-  { id: 'qualified', label: 'Qualified', probability: 30, color: '#3498db' },
-  { id: 'proposal', label: 'Proposal', probability: 60, color: '#9b59b6' },
-  { id: 'won', label: 'Won', probability: 100, color: '#2ecc71' },
+  { id: 'pre_dd', label: 'Pre-Due Diligence', probability: 10, color: '#f39c12' },
+  { id: 'dd', label: 'Due Diligence', probability: 30, color: '#3498db' },
+  { id: 'ic', label: 'Ready for Investment Committee', probability: 60, color: '#9b59b6' },
+  { id: 'approved', label: 'Loan Approved', probability: 80, color: '#8e44ad' },
+  { id: 'signed', label: 'Deal Signed', probability: 90, color: '#d35400' },
+  { id: 'won', label: 'Disbursed/Won', probability: 100, color: '#2ecc71' },
   { id: 'lost', label: 'Lost', probability: 0, color: '#e74c3c' }
 ];
 
@@ -116,12 +118,36 @@ const defaultOpportunities = [
     investmentFacility: 'Renewable Energy Dev Loan',
     dealSize: 1200000,
     esgRating: 'AAA (Exceptional)',
-    stage: 'prospect',
+    stage: 'pre_dd',
     probability: 10,
     emailsTriggered: [
       { date: '2026-06-10T10:15:00Z', subject: 'Welcome to MicroInvest Lead Portal', recipient: 'alice@solartech.io' }
     ],
-    notes: 'Initial discussion on funding solar microgrid expansion in California.'
+    notes: 'Initial discussion on funding solar microgrid expansion in California.',
+    checklist: {
+      pre_dd: [
+        { id: 'kyc_pass', label: 'KYC & AML Pass Verification', completed: true },
+        { id: 'fca_check', label: 'FCA Registration Verification', completed: false }
+      ],
+      dd: [
+        { id: 'financial_dd', label: 'Financial Due Diligence Report Signed Off', completed: false },
+        { id: 'esg_review', label: 'ESG Sizing & Impact Assessment Done', completed: false }
+      ],
+      ic: [
+        { id: 'ic_proposal', label: 'IC Investment Memorandum Submitted', completed: false },
+        { id: 'ic_approval', label: 'IC Approval Minute Uploaded', completed: false }
+      ],
+      approved: [
+        { id: 'facility_letter', label: 'Facility Letter Issued to Borrower', completed: false },
+        { id: 'credit_committee', label: 'Credit Committee Minute Signed', completed: false }
+      ],
+      signed: [
+        { id: 'debenture', label: 'Debenture signed & received', completed: false },
+        { id: 'charge_agreement', label: 'Charge Agreement signed', completed: false },
+        { id: 'director_guarantees', label: 'Director Personal Guarantees signed', completed: false },
+        { id: 'legal_opinion', label: 'Borrower Legal Opinion letter received', completed: false }
+      ]
+    }
   },
   {
     id: 'opp-2',
@@ -132,13 +158,37 @@ const defaultOpportunities = [
     investmentFacility: 'Tech Innovation Venture',
     dealSize: 850000,
     esgRating: 'A (Moderate)',
-    stage: 'proposal',
+    stage: 'ic',
     probability: 60,
     emailsTriggered: [
       { date: '2026-06-12T09:05:00Z', subject: 'Welcome to MicroInvest Lead Portal', recipient: 'clara@nextgenbio.co' },
       { date: '2026-06-13T11:00:00Z', subject: 'Investment Proposal Request - NextGen Bio', recipient: 'clara@nextgenbio.co' }
     ],
-    notes: 'Proposal submitted. Executive committee reviewing alignment with regional tech dev directives.'
+    notes: 'Proposal submitted. Executive committee reviewing alignment with regional tech dev directives.',
+    checklist: {
+      pre_dd: [
+        { id: 'kyc_pass', label: 'KYC & AML Pass Verification', completed: true },
+        { id: 'fca_check', label: 'FCA Registration Verification', completed: true }
+      ],
+      dd: [
+        { id: 'financial_dd', label: 'Financial Due Diligence Report Signed Off', completed: true },
+        { id: 'esg_review', label: 'ESG Sizing & Impact Assessment Done', completed: true }
+      ],
+      ic: [
+        { id: 'ic_proposal', label: 'IC Investment Memorandum Submitted', completed: true },
+        { id: 'ic_approval', label: 'IC Approval Minute Uploaded', completed: false }
+      ],
+      approved: [
+        { id: 'facility_letter', label: 'Facility Letter Issued to Borrower', completed: false },
+        { id: 'credit_committee', label: 'Credit Committee Minute Signed', completed: false }
+      ],
+      signed: [
+        { id: 'debenture', label: 'Debenture signed & received', completed: false },
+        { id: 'charge_agreement', label: 'Charge Agreement signed', completed: false },
+        { id: 'director_guarantees', label: 'Director Personal Guarantees signed', completed: false },
+        { id: 'legal_opinion', label: 'Borrower Legal Opinion letter received', completed: false }
+      ]
+    }
   },
   {
     id: 'opp-3',
@@ -160,7 +210,31 @@ const defaultOpportunities = [
     booked: true,
     loanId: 'LN-2026-0043',
     margillSynced: true,
-    accountingSynced: true
+    accountingSynced: true,
+    checklist: {
+      pre_dd: [
+        { id: 'kyc_pass', label: 'KYC & AML Pass Verification', completed: true },
+        { id: 'fca_check', label: 'FCA Registration Verification', completed: true }
+      ],
+      dd: [
+        { id: 'financial_dd', label: 'Financial Due Diligence Report Signed Off', completed: true },
+        { id: 'esg_review', label: 'ESG Sizing & Impact Assessment Done', completed: true }
+      ],
+      ic: [
+        { id: 'ic_proposal', label: 'IC Investment Memorandum Submitted', completed: true },
+        { id: 'ic_approval', label: 'IC Approval Minute Uploaded', completed: true }
+      ],
+      approved: [
+        { id: 'facility_letter', label: 'Facility Letter Issued to Borrower', completed: true },
+        { id: 'credit_committee', label: 'Credit Committee Minute Signed', completed: true }
+      ],
+      signed: [
+        { id: 'debenture', label: 'Debenture signed & received', completed: true },
+        { id: 'charge_agreement', label: 'Charge Agreement signed', completed: true },
+        { id: 'director_guarantees', label: 'Director Personal Guarantees signed', completed: true },
+        { id: 'legal_opinion', label: 'Borrower Legal Opinion letter received', completed: true }
+      ]
+    }
   },
   {
     id: 'opp-4',
@@ -171,15 +245,39 @@ const defaultOpportunities = [
     investmentFacility: 'Urban Housing Fund',
     dealSize: 4500000,
     esgRating: 'AA (High Impact)',
-    stage: 'won',
-    probability: 100,
+    stage: 'signed',
+    probability: 90,
     emailsTriggered: [
       { date: '2026-06-11T14:30:00Z', subject: 'Welcome to MicroInvest Lead Portal', recipient: 'bob@apexhousing.com' },
       { date: '2026-06-13T10:00:00Z', subject: 'Investment Proposal Request - Apex Housing Group', recipient: 'bob@apexhousing.com' },
       { date: '2026-06-14T16:45:00Z', subject: 'Deal Won - Loan Booking Confirmation Pending', recipient: 'bob@apexhousing.com' }
     ],
     notes: 'Deal successfully closed. Awaiting Operations to book and disburse via Margill.',
-    booked: false
+    booked: false,
+    checklist: {
+      pre_dd: [
+        { id: 'kyc_pass', label: 'KYC & AML Pass Verification', completed: true },
+        { id: 'fca_check', label: 'FCA Registration Verification', completed: true }
+      ],
+      dd: [
+        { id: 'financial_dd', label: 'Financial Due Diligence Report Signed Off', completed: true },
+        { id: 'esg_review', label: 'ESG Sizing & Impact Assessment Done', completed: true }
+      ],
+      ic: [
+        { id: 'ic_proposal', label: 'IC Investment Memorandum Submitted', completed: true },
+        { id: 'ic_approval', label: 'IC Approval Minute Uploaded', completed: true }
+      ],
+      approved: [
+        { id: 'facility_letter', label: 'Facility Letter Issued to Borrower', completed: true },
+        { id: 'credit_committee', label: 'Credit Committee Minute Signed', completed: true }
+      ],
+      signed: [
+        { id: 'debenture', label: 'Debenture signed & received', completed: true },
+        { id: 'charge_agreement', label: 'Charge Agreement signed', completed: true },
+        { id: 'director_guarantees', label: 'Director Personal Guarantees signed', completed: false },
+        { id: 'legal_opinion', label: 'Borrower Legal Opinion letter received', completed: false }
+      ]
+    }
   }
 ];
 
@@ -605,4 +703,50 @@ export const requestCovenantData = (id) => {
     })
   );
 };
+
+// Opportunity checklist helpers
+export const toggleChecklistItem = (oppId, stageId, itemId) => {
+  opportunities.update(list =>
+    list.map(opp => {
+      if (opp.id === oppId) {
+        const stageList = opp.checklist?.[stageId] || [];
+        const updatedStageList = stageList.map(item =>
+          item.id === itemId ? { ...item, completed: !item.completed } : item
+        );
+        const updatedChecklist = { ...opp.checklist, [stageId]: updatedStageList };
+        
+        const itemLabel = stageList.find(i => i.id === itemId)?.label || itemId;
+        const isCompletedNow = updatedStageList.find(i => i.id === itemId)?.completed;
+        addAuditLog(get(userRole), `Marked checklist item "${itemLabel}" as ${isCompletedNow ? 'Completed' : 'Pending'} for ${opp.companyName}`);
+        
+        return { ...opp, checklist: updatedChecklist };
+      }
+      return opp;
+    })
+  );
+};
+
+export const addChecklistItem = (oppId, stageId, label) => {
+  if (!label.trim()) return;
+  opportunities.update(list =>
+    list.map(opp => {
+      if (opp.id === oppId) {
+        const stageList = opp.checklist?.[stageId] || [];
+        const newItem = {
+          id: 'task-' + Math.random().toString(36).substr(2, 9),
+          label: label.trim(),
+          completed: false
+        };
+        const updatedChecklist = {
+          ...opp.checklist,
+          [stageId]: [...stageList, newItem]
+        };
+        addAuditLog(get(userRole), `Added new checklist item "${label}" to stage [${stageId}] for ${opp.companyName}`);
+        return { ...opp, checklist: updatedChecklist };
+      }
+      return opp;
+    })
+  );
+};
+
 

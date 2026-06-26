@@ -8,7 +8,8 @@
     userRole,
     covenants,
     ncmFunds,
-    requestCovenantData
+    requestCovenantData,
+    toggleChecklistItem
   } from '$lib/store.js';
 
   // Compute stats reactively
@@ -68,6 +69,106 @@
   function clearNotification(id) {
     notifications.update(list => list.filter(n => n.id !== id));
   }
+
+  // Origination tasks: Active leads needing Intro calls + early opportunities in pre_dd stage
+  $: originationTasks = (() => {
+    const list = [];
+    
+    $leads.filter(l => l.status === 'active').forEach(l => {
+      const dueDays = l.id === 'ld-2' ? 2 : 4;
+      list.push({
+        id: l.id,
+        type: 'intro_call',
+        title: `Introduction Call: ${l.contactName}`,
+        company: l.companyName,
+        dueText: `Due in ${dueDays} days`,
+        status: 'Pending',
+        details: `Facility: ${l.investmentFacility || 'N/A'} | Size: £${l.dealSize?.toLocaleString()}`
+      });
+    });
+
+    $opportunities.filter(o => o.stage === 'pre_dd').forEach(o => {
+      const preDdItems = o.checklist?.pre_dd || [];
+      const pendingItems = preDdItems.filter(i => !i.completed);
+      pendingItems.forEach(item => {
+        list.push({
+          id: `${o.id}-pre_dd-${item.id}`,
+          type: 'compliance',
+          title: `Pre-DD: ${item.label}`,
+          company: o.companyName,
+          dueText: 'Action Required',
+          status: 'Pending',
+          details: `KYC compliance gating underwriting`
+        });
+      });
+    });
+
+    return list;
+  })();
+
+  // Execution tasks: Incomplete checklist items for stages dd, ic, approved, signed
+  $: executionTasks = (() => {
+    const list = [];
+    const executionStages = ['dd', 'ic', 'approved', 'signed'];
+    const stageLabels = {
+      dd: 'Due Diligence',
+      ic: 'IC Review',
+      approved: 'Approved',
+      signed: 'Deal Signed'
+    };
+
+    $opportunities.forEach(opp => {
+      if (opp.stage === 'won' || opp.stage === 'lost') return;
+      
+      executionStages.forEach(stageId => {
+        const items = opp.checklist?.[stageId] || [];
+        items.forEach(item => {
+          if (!item.completed) {
+            list.push({
+              oppId: opp.id,
+              oppName: opp.companyName,
+              stageId,
+              stageLabel: stageLabels[stageId] || stageId,
+              itemId: item.id,
+              label: item.label
+            });
+          }
+        });
+      });
+    });
+    return list;
+  })();
+
+  // Portfolio Management tasks: covenants pending/overdue + bad debt loans
+  $: portfolioTasks = (() => {
+    const list = [];
+
+    $covenants.filter(c => c.status !== 'Collected').forEach(c => {
+      list.push({
+        id: c.id,
+        type: 'covenant',
+        title: c.title,
+        company: c.companyName,
+        status: c.status,
+        dueText: c.status === 'Overdue' ? '⚠️ Overdue' : `Due: ${c.dueDate}`,
+        details: c.description
+      });
+    });
+
+    $loans.filter(l => l.status === 'Bad debt' || l.status === 'Arrears').forEach(l => {
+      list.push({
+        id: l.id,
+        type: 'arrears',
+        title: `Client in Arrears (${l.status})`,
+        company: l.companyName,
+        status: 'Critical',
+        dueText: 'Immediate Action',
+        details: `Servicing Balance: £${l.remainingBalance?.toLocaleString()} | Facility: ${l.facility}`
+      });
+    });
+
+    return list;
+  })();
 </script>
 
 <div class="dashboard-page">
@@ -129,6 +230,105 @@
     
     <!-- LEFT SIDE: Role Specific Widgets & Graphs -->
     <div class="left-pane">
+      
+      <!-- Premium Workspace Dealflow & Task Center Widget -->
+      <div class="glass-card section-card dealflow-workspace fade-in">
+        <div class="section-header">
+          <h3>📋 Dealflow Workspace & Task Center</h3>
+          <p>Consolidated pipeline oversight: track early origination, execution milestones, and portfolio compliance servicing in real time.</p>
+        </div>
+
+        <div class="dealflow-grid">
+          <!-- Column 1: Origination -->
+          <div class="dealflow-column">
+            <div class="column-title-box">
+              <h4>🎯 1. Origination & Leads</h4>
+              <span class="task-count-badge">{originationTasks.length}</span>
+            </div>
+            <div class="column-task-list">
+              {#each originationTasks as task}
+                <div class="task-mini-card">
+                  <div class="task-meta">
+                    <span class="task-type-badge">{task.type.replace('_', ' ')}</span>
+                    <span class="task-due">{task.dueText}</span>
+                  </div>
+                  <div class="task-title">{task.title}</div>
+                  <div class="task-co-name">{task.company}</div>
+                  <div class="task-details">{task.details}</div>
+                </div>
+              {/each}
+              {#if originationTasks.length === 0}
+                <div class="empty-tasks-txt">No origination tasks flagged.</div>
+              {/if}
+            </div>
+          </div>
+
+          <!-- Column 2: Execution -->
+          <div class="dealflow-column">
+            <div class="column-title-box">
+              <h4>⚡ 2. Execution & Underwriting</h4>
+              <span class="task-count-badge">{executionTasks.length}</span>
+            </div>
+            <div class="column-task-list">
+              {#each executionTasks as task}
+                <div class="task-mini-card">
+                  <div class="task-meta">
+                    <span class="task-type-badge">{task.stageLabel}</span>
+                    <span class="task-due">Outstanding</span>
+                  </div>
+                  <label class="task-checkbox-row">
+                    <input 
+                      type="checkbox" 
+                      checked={false} 
+                      on:change={() => toggleChecklistItem(task.oppId, task.stageId, task.itemId)}
+                    />
+                    <div class="task-text-col">
+                      <div class="task-title">{task.label}</div>
+                      <div class="task-co-name">{task.oppName}</div>
+                    </div>
+                  </label>
+                </div>
+              {/each}
+              {#if executionTasks.length === 0}
+                <div class="empty-tasks-txt">All underwriting checklists completed!</div>
+              {/if}
+            </div>
+          </div>
+
+          <!-- Column 3: Portfolio Management -->
+          <div class="dealflow-column">
+            <div class="column-title-box">
+              <h4>🌿 3. Portfolio Management</h4>
+              <span class="task-count-badge">{portfolioTasks.length}</span>
+            </div>
+            <div class="column-task-list">
+              {#each portfolioTasks as task}
+                <div class="task-mini-card">
+                  <div class="task-meta">
+                    <span class="task-type-badge" class:overdue={task.status === 'Overdue' || task.status === 'Critical'}>
+                      {task.type}
+                    </span>
+                    <span class="task-due" class:red={task.status === 'Overdue' || task.status === 'Critical'}>{task.dueText}</span>
+                  </div>
+                  <div class="task-title">{task.title}</div>
+                  <div class="task-co-name">{task.company}</div>
+                  <div class="task-details">{task.details}</div>
+                  {#if task.type === 'covenant'}
+                    <div class="task-card-actions">
+                      <button class="action-link-btn" on:click={() => requestCovenantData(task.id)}>
+                        📧 Send Reminder
+                      </button>
+                    </div>
+                  {/if}
+                </div>
+              {/each}
+              {#if portfolioTasks.length === 0}
+                <div class="empty-tasks-txt">No covenants or servicing flags pending.</div>
+              {/if}
+            </div>
+          </div>
+        </div>
+      </div>
       
       <!-- Management Team Portfolio Details (Visible to Management, Admin, Ops) -->
       {#if $userRole === 'Management Team' || $userRole === 'Admin' || $userRole === 'Operations'}
@@ -697,5 +897,178 @@
   .timeline-desc {
     color: var(--text-secondary);
     line-height: 1.4;
+  }
+
+  /* Dealflow Workspace Styles */
+  .dealflow-workspace {
+    margin-bottom: 28px;
+  }
+
+  .dealflow-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 20px;
+    margin-top: 16px;
+  }
+
+  .dealflow-column {
+    background: rgba(255, 255, 255, 0.01);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .column-title-box {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+  }
+
+  .column-title-box h4 {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .task-count-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+  }
+
+  .column-task-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 340px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+
+  .task-mini-card {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px 12px;
+    transition: var(--transition-smooth);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .task-mini-card:hover {
+    background: var(--bg-glass-hover);
+    border-color: var(--border-color-hover);
+    transform: translateY(-1px);
+  }
+
+  .task-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .task-type-badge {
+    font-size: 8px;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: rgba(51, 153, 255, 0.1);
+    color: var(--accent-blue);
+    text-transform: uppercase;
+  }
+
+  .task-type-badge.overdue {
+    background: rgba(231, 76, 60, 0.1);
+    color: var(--accent-red);
+  }
+
+  .task-due {
+    font-size: 9px;
+    color: var(--text-muted);
+  }
+
+  .task-due.red {
+    color: var(--accent-red);
+    font-weight: 600;
+  }
+
+  .task-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .task-co-name {
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+
+  .task-details {
+    font-size: 10px;
+    color: var(--text-muted);
+    line-height: 1.3;
+  }
+
+  .task-checkbox-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    cursor: pointer;
+    margin-top: 2px;
+  }
+
+  .task-checkbox-row input {
+    margin-top: 3px;
+    cursor: pointer;
+    accent-color: var(--accent-blue);
+  }
+
+  .task-text-col {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .task-card-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
+
+  .action-link-btn {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--accent-blue);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid rgba(51, 153, 255, 0.2);
+  }
+
+  .action-link-btn:hover {
+    background: rgba(51, 153, 255, 0.1);
+    border-color: var(--accent-blue);
+  }
+
+  .empty-tasks-txt {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 20px 0;
+    text-align: center;
   }
 </style>
