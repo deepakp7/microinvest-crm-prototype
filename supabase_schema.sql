@@ -184,35 +184,51 @@ ALTER TABLE public.ncm_funds ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.covenants ENABLE ROW LEVEL SECURITY;
 
 -- feedback policies
+DROP POLICY IF EXISTS "Allow anon feedback insert" ON public.feedback;
 CREATE POLICY "Allow anon feedback insert" ON public.feedback FOR INSERT TO anon WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon feedback select" ON public.feedback;
 CREATE POLICY "Allow anon feedback select" ON public.feedback FOR SELECT TO anon USING (true);
 
 -- leads policies
+DROP POLICY IF EXISTS "Allow authenticated leads manage" ON public.leads;
 CREATE POLICY "Allow authenticated leads manage" ON public.leads FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon leads manage" ON public.leads;
 CREATE POLICY "Allow anon leads manage" ON public.leads FOR ALL TO anon USING (true) WITH CHECK (true); -- Useful for prototype; restrict in real prod settings!
 
 -- opportunities policies
+DROP POLICY IF EXISTS "Allow authenticated opportunities manage" ON public.opportunities;
 CREATE POLICY "Allow authenticated opportunities manage" ON public.opportunities FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon opportunities manage" ON public.opportunities;
 CREATE POLICY "Allow anon opportunities manage" ON public.opportunities FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- loans policies
+DROP POLICY IF EXISTS "Allow authenticated loans manage" ON public.loans;
 CREATE POLICY "Allow authenticated loans manage" ON public.loans FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon loans manage" ON public.loans;
 CREATE POLICY "Allow anon loans manage" ON public.loans FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- audit_logs policies
+DROP POLICY IF EXISTS "Allow authenticated audit_logs manage" ON public.audit_logs;
 CREATE POLICY "Allow authenticated audit_logs manage" ON public.audit_logs FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon audit_logs manage" ON public.audit_logs;
 CREATE POLICY "Allow anon audit_logs manage" ON public.audit_logs FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- notifications policies
+DROP POLICY IF EXISTS "Allow authenticated notifications manage" ON public.notifications;
 CREATE POLICY "Allow authenticated notifications manage" ON public.notifications FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon notifications manage" ON public.notifications;
 CREATE POLICY "Allow anon notifications manage" ON public.notifications FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- ncm_funds policies
+DROP POLICY IF EXISTS "Allow authenticated ncm_funds manage" ON public.ncm_funds;
 CREATE POLICY "Allow authenticated ncm_funds manage" ON public.ncm_funds FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon ncm_funds manage" ON public.ncm_funds;
 CREATE POLICY "Allow anon ncm_funds manage" ON public.ncm_funds FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- covenants policies
+DROP POLICY IF EXISTS "Allow authenticated covenants manage" ON public.covenants;
 CREATE POLICY "Allow authenticated covenants manage" ON public.covenants FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon covenants manage" ON public.covenants;
 CREATE POLICY "Allow anon covenants manage" ON public.covenants FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- ==========================================
